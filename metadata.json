@@ -1,0 +1,6 @@
+{
+  "name": "Centinela de Vida - CSMC",
+  "description": "Sistema de Registro de Pacientes, Programación Anual, Reportes Estadísticos y Gestión de Usuarios para Centro de Salud Mental Comunitario.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
