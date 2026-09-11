@@ -115,27 +115,76 @@ export const DashboardView: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-7">
-      {/* Welcome Banner - Exact match with user screenshot */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#1A2B4A] via-[#1e3a5f] to-[#2D9C8B] text-white p-6 md:p-8 shadow-md">
-        <div className="relative z-10 flex flex-col md:flex-row justify-between md:items-center gap-4">
-          <div className="space-y-1">
-            <h2 className="text-xl md:text-2xl font-bold tracking-tight">
-              Bienvenido, {currentUser.nombres} {currentUser.apellidos}
-            </h2>
-            <p className="text-xs md:text-sm text-white/80 font-normal">
-              Sistema de Registro de Pacientes - Centro de Salud Mental Comunitario
-            </p>
+      {/* Welcome Banner con Identidad Dual (CSMC Centinela de Vida + Unidad de Seguros) */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#1A2B4A] via-[#1A365D] to-[#2D9C8B] dark:from-[#0B1426] dark:via-[#11243D] dark:to-[#0D4D44] text-white p-6 md:p-8 shadow-xl border border-white/15 dark:border-teal-500/20 transition-all">
+        <div className="relative z-10 flex flex-col md:flex-row justify-between md:items-center gap-6">
+          <div className="flex items-center gap-4 sm:gap-5">
+            {/* Contenedor de Logos Institucionales */}
+            <div className="flex items-center gap-2.5 shrink-0 bg-white/10 dark:bg-black/20 p-2 rounded-2xl backdrop-blur-md border border-white/20">
+              {/* Logo 1: CSMC Centinela de Vida */}
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-white shadow-md border-2 border-teal-400 shrink-0 flex items-center justify-center">
+                <img
+                  src="/img/centinela.jpg"
+                  alt="CSMC Centinela de Vida"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    const parent = e.currentTarget.parentElement;
+                    if (parent) {
+                      parent.innerHTML = '<span class="text-[10px] font-black text-teal-700 leading-none">CSMC<br/>CENTINELA</span>';
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="h-8 w-px bg-white/30 hidden sm:block"></div>
+
+              {/* Logo 2: Unidad de Seguros U.E. 401 */}
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-white shadow-md border-2 border-blue-400 shrink-0 flex items-center justify-center">
+                <img
+                  src="/img/image.png"
+                  alt="Unidad de Seguros U.E. 401"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    const parent = e.currentTarget.parentElement;
+                    if (parent) {
+                      parent.innerHTML = '<span class="text-[10px] font-black text-blue-800 leading-none">U.E. 401<br/>SEGUROS</span>';
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Saludo y Títulos */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-teal-200 bg-teal-950/40 border border-teal-400/40 px-2.5 py-0.5 rounded-full">
+                  Unidad de Seguros • U.E. 401
+                </span>
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-blue-200 bg-blue-950/40 border border-blue-400/40 px-2.5 py-0.5 rounded-full">
+                  CSMC Centinela de Vida
+                </span>
+              </div>
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight text-white drop-shadow-xs">
+                Bienvenido, {currentUser.nombres} {currentUser.apellidos}
+              </h2>
+              <p className="text-xs sm:text-sm text-teal-50/90 font-normal max-w-xl">
+                Plataforma Integral de Sistematización, Programación Anual y Gestión FUA
+              </p>
+            </div>
           </div>
 
-          <div className="self-start md:self-auto">
-            <span className="bg-white/20 hover:bg-white/25 backdrop-blur-md text-white text-xs font-bold px-4 py-1.5 rounded-full tracking-wider uppercase border border-white/20 shadow-sm inline-block">
+          <div className="self-start md:self-auto shrink-0">
+            <span className="bg-white/20 hover:bg-white/25 dark:bg-teal-500/20 backdrop-blur-md text-white dark:text-teal-200 text-xs font-extrabold px-4 py-2 rounded-xl tracking-wider uppercase border border-white/25 dark:border-teal-400/40 shadow-sm inline-block">
               {currentUser.rol}
             </span>
           </div>
         </div>
 
-        {/* Decorative circle backdrop */}
-        <div className="absolute -right-16 -top-16 w-64 h-64 bg-white/5 rounded-full pointer-events-none"></div>
+        {/* Decorative backdrop glow */}
+        <div className="absolute -right-16 -top-16 w-64 h-64 bg-teal-400/10 rounded-full blur-2xl pointer-events-none"></div>
+        <div className="absolute -left-16 -bottom-16 w-64 h-64 bg-blue-400/10 rounded-full blur-2xl pointer-events-none"></div>
       </div>
 
       {/* Supabase Integration Live Bar */}
@@ -366,7 +415,7 @@ export const DashboardView: React.FC = () => {
                 </div>
                 <div
                   style={{ height: `${height}%` }}
-                  className="w-full max-w-7 bg-[#1A2B4A] dark:bg-teal-600 hover:bg-teal-500 rounded-t-sm transition-all shadow-xs"
+                  className="w-full max-w-7 bg-gradient-to-t from-[#1A2B4A] to-[#2D9C8B] dark:from-blue-600 dark:to-teal-400 hover:from-blue-700 hover:to-teal-300 rounded-t-md transition-all shadow-xs"
                 ></div>
                 <span className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
                   {mes.mesNombre.substring(0, 3)}

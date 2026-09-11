@@ -218,7 +218,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : INITIAL_ATENCIONES;
   });
 
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_theme`);
+    if (saved === 'dark' || saved === 'light') return saved;
+    return 'light';
+  });
+
+  // Sincronizar clase .dark y data-theme en el elemento <html>
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+    try {
+      localStorage.setItem(`${LOCAL_STORAGE_KEY}_theme`, theme);
+    } catch (e) {
+      console.warn('Error guardando tema:', e);
+    }
+  }, [theme]);
 
   // Supabase States
   const [supabaseStatus, setSupabaseStatus] = useState<'connected' | 'disconnected' | 'connecting' | 'error'>(
@@ -443,15 +463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleTheme = () => {
-    const next = theme === 'light' ? 'dark' : 'light';
-    setTheme(next);
-    if (next === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.setAttribute('data-theme', 'light');
-      document.documentElement.classList.remove('dark');
-    }
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
   // PACIENTES

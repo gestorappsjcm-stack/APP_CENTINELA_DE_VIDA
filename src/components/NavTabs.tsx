@@ -66,10 +66,10 @@ export const NavTabs: React.FC = () => {
           <button
             key={tab.id}
             onClick={() => setCurrentTab(tab.id)}
-            className={`py-3.5 px-4 text-[13px] font-medium border-b-2 transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`py-3 px-3.5 text-[13px] font-medium border-b-2 transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               isActive
-                ? 'text-[#1A2B4A] dark:text-teal-400 border-[#1A2B4A] dark:border-teal-400 font-bold bg-slate-50/70 dark:bg-slate-800/40'
-                : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/30'
+                ? 'text-[#1A2B4A] dark:text-teal-300 border-teal-600 dark:border-teal-400 font-bold bg-teal-50/60 dark:bg-teal-950/40'
+                : 'text-slate-600 dark:text-slate-400 border-transparent hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
             }`}
           >
             <Icon size={16} className={isActive ? 'text-teal-600 dark:text-teal-400' : 'text-slate-400'} />

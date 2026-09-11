@@ -98,11 +98,11 @@ const AppShell: React.FC = () => {
       </main>
 
       {/* Footer Institucional / Autoría */}
-      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md py-4 px-6 text-center text-xs text-slate-500 flex flex-col sm:flex-row justify-between items-center gap-2">
+      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md py-4 px-6 text-center text-xs text-slate-500 dark:text-slate-400 flex flex-col sm:flex-row justify-between items-center gap-2">
         <span>
           CSMC Centinela de Vida • Proyecto de la Unidad de Seguros (U.E. 401)
         </span>
-        <span className="text-[11px] text-teal-700 dark:text-teal-400 font-medium">
+        <span className="text-[11px] text-teal-700 dark:text-teal-400 font-semibold">
           Desarrollado por: Juan Carlos Castillo Magallanes (Informático U.E. 401)
         </span>
       </footer>

@@ -16,32 +16,37 @@ export const Navbar: React.FC = () => {
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   return (
-    <nav className="bg-[#1A2B4A] text-white px-4 md:px-8 h-16 flex justify-between items-center sticky top-0 z-50 shadow-md">
+    <nav className="bg-[#1A2B4A] dark:bg-[#0B1426] text-white px-4 md:px-8 h-16 flex justify-between items-center sticky top-0 z-50 shadow-md border-b border-white/10 dark:border-slate-800 transition-colors">
       {/* Brand */}
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full bg-white p-1 flex items-center justify-center shadow-inner overflow-hidden border border-teal-500">
+        <div className="w-10 h-10 rounded-xl bg-white p-0.5 flex items-center justify-center shadow-md overflow-hidden border-2 border-teal-400 shrink-0">
           <img
-            src="/assets/aistudio/logo.png"
-            alt="Logo Centinela"
-            className="w-full h-full object-contain"
+            src="/img/centinela.jpg"
+            alt="Logo CSMC Centinela de Vida"
+            className="w-full h-full object-cover rounded-lg"
             onError={(e) => {
               // Fallback icon si la imagen aún no está cargada
               (e.target as HTMLElement).style.display = 'none';
               const parent = (e.target as HTMLElement).parentElement;
               if (parent) {
-                parent.innerHTML = '<span class="text-xs font-bold text-teal-700">CV</span>';
+                parent.innerHTML = '<span class="text-xs font-black text-teal-700">CSMC</span>';
               }
             }}
           />
         </div>
         <div className="leading-tight">
-          <h1 className="text-[15px] font-semibold tracking-wide text-white flex items-center gap-2">
-            Centinela de Vida
-            <span className="hidden sm:inline-block text-[10px] bg-teal-600/60 text-teal-200 px-2 py-0.5 rounded-full font-medium">
+          <div className="flex items-center gap-2">
+            <h1 className="text-[15px] font-bold tracking-wide text-white flex items-center gap-1.5">
+              Centinela de Vida
+            </h1>
+            <span className="hidden sm:inline-block text-[10px] bg-teal-500/30 text-teal-200 border border-teal-400/30 px-2 py-0.5 rounded-full font-bold">
               CSMC
             </span>
-          </h1>
-          <span className="text-[11px] text-white/70 block">
+            <span className="hidden md:inline-block text-[10px] bg-blue-500/30 text-blue-200 border border-blue-400/30 px-2 py-0.5 rounded-full font-semibold">
+              Unidad de Seguros • U.E. 401
+            </span>
+          </div>
+          <span className="text-[11px] text-teal-100/70 block">
             Centro de Salud Mental Comunitario
           </span>
         </div>
@@ -83,10 +88,20 @@ export const Navbar: React.FC = () => {
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
-          title={theme === 'light' ? 'Modo Oscuro' : 'Modo Claro'}
-          className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all text-sm cursor-pointer"
+          title={theme === 'light' ? 'Activar Modo Nocturno / Oscuro' : 'Activar Modo Diurno / Claro'}
+          className="h-9 px-2.5 rounded-full bg-white/10 hover:bg-white/20 flex items-center gap-1.5 text-white transition-all text-xs font-semibold cursor-pointer border border-white/10"
         >
-          {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+          {theme === 'light' ? (
+            <>
+              <Moon size={15} className="text-amber-300" />
+              <span className="hidden sm:inline text-[11px]">Noche</span>
+            </>
+          ) : (
+            <>
+              <Sun size={15} className="text-amber-400" />
+              <span className="hidden sm:inline text-[11px]">Día</span>
+            </>
+          )}
         </button>
 
         {/* User Pill with fast switcher */}
@@ -112,12 +127,12 @@ export const Navbar: React.FC = () => {
 
           {/* Switcher Dropdown to test permissions */}
           {showUserMenu && (
-            <div className="absolute right-0 mt-2 w-72 bg-white text-slate-800 rounded-xl shadow-2xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-3 py-2 border-b border-slate-100">
-                <span className="text-[11px] uppercase font-bold text-slate-400 block tracking-wider">
+            <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-[11px] uppercase font-bold text-slate-400 dark:text-slate-400 block tracking-wider">
                   Cambiar Usuario Activo
                 </span>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   Prueba permisos por rol y módulo al instante:
                 </p>
               </div>
@@ -130,17 +145,17 @@ export const Navbar: React.FC = () => {
                       setCurrentUser(u);
                       setShowUserMenu(false);
                     }}
-                    className={`w-full px-3 py-2 text-left flex items-center justify-between text-xs hover:bg-slate-50 transition-colors cursor-pointer ${
-                      currentUser.id === u.id ? 'bg-teal-50 text-teal-900 font-semibold' : ''
+                    className={`w-full px-3 py-2 text-left flex items-center justify-between text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
+                      currentUser.id === u.id ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200 font-semibold' : ''
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs">
+                      <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center font-bold text-xs">
                         {u.nombres[0]}
                         {u.apellidos[0]}
                       </div>
                       <div>
-                        <div className="font-medium text-slate-800">
+                        <div className="font-medium text-slate-800 dark:text-slate-100">
                           {u.nombres} {u.apellidos}
                         </div>
                         <div className="text-[10px] text-slate-400 uppercase font-mono">
@@ -148,18 +163,18 @@ export const Navbar: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    {currentUser.id === u.id && <Check size={16} className="text-teal-600" />}
+                    {currentUser.id === u.id && <Check size={16} className="text-teal-600 dark:text-teal-400" />}
                   </button>
                 ))}
               </div>
 
-              <div className="px-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+              <div className="px-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                 <button
                   onClick={() => {
                     setShowUserMenu(false);
                     setActiveModal('gestionUsuarios');
                   }}
-                  className="w-full py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                  className="w-full py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <UserPlus size={13} />
                   Crear / Configurar Usuarios
