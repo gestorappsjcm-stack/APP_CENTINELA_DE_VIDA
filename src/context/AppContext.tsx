@@ -139,12 +139,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [pacientes, setPacientes] = useState<Paciente[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_pacientes`);
-    return saved ? JSON.parse(saved) : INITIAL_PACIENTES;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Filtrar antiguos registros demo (pac-1 a pac-10) para pruebas oficiales
+          return parsed.filter((p: any) => !p.id || !p.id.match(/^pac-[1-9]$|^pac-10$/));
+        }
+      } catch (e) {
+        console.warn('Error parseando pacientes:', e);
+      }
+    }
+    return INITIAL_PACIENTES;
   });
 
   const [fuas, setFuas] = useState<FUA[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_fuas`);
-    return saved ? JSON.parse(saved) : INITIAL_FUAS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((f: any) => !f.id || !f.id.match(/^fua-[1-9]$/));
+        }
+      } catch (e) {
+        console.warn('Error parseando fuas:', e);
+      }
+    }
+    return INITIAL_FUAS;
   });
 
   const [fuaConfig, setFuaConfig] = useState<FuaConfig>(() => {
@@ -160,7 +181,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       codigo_renipress: '00003414',
       anio: 2026,
       rango_maximo: 100,
-      ultimo_numero: INITIAL_FUAS.length,
+      ultimo_numero: 0,
       nombre_ipress: 'HOSPITAL SAN JOSÉ DE CHINCHA',
     };
   });
@@ -205,17 +226,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [citas, setCitas] = useState<Cita[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_citas`);
-    return saved ? JSON.parse(saved) : INITIAL_CITAS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((c: any) => !c.id || !c.id.match(/^cita-[1-9]$/));
+        }
+      } catch (e) {
+        console.warn('Error parseando citas:', e);
+      }
+    }
+    return INITIAL_CITAS;
   });
 
   const [triajes, setTriajes] = useState<Triaje[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_triajes`);
-    return saved ? JSON.parse(saved) : INITIAL_TRIAJES;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((t: any) => !t.id || !t.id.match(/^trj-[1-9]$/));
+        }
+      } catch (e) {
+        console.warn('Error parseando triajes:', e);
+      }
+    }
+    return INITIAL_TRIAJES;
   });
 
   const [atenciones, setAtenciones] = useState<AtencionClinica[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_atenciones`);
-    return saved ? JSON.parse(saved) : INITIAL_ATENCIONES;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((a: any) => !a.id || !a.id.match(/^atn-[1-9]$/));
+        }
+      } catch (e) {
+        console.warn('Error parseando atenciones:', e);
+      }
+    }
+    return INITIAL_ATENCIONES;
   });
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -291,25 +342,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (liveStats) {
         setSupabaseLiveStats(liveStats);
       }
-      if (supaPacientes && supaPacientes.length > 0) {
+      if (Array.isArray(supaPacientes)) {
         setPacientes(supaPacientes);
       }
-      if (supaCitas && supaCitas.length > 0) {
+      if (Array.isArray(supaCitas)) {
         setCitas(supaCitas);
       }
-      if (supaAtenciones && supaAtenciones.length > 0) {
+      if (Array.isArray(supaAtenciones)) {
         setAtenciones(supaAtenciones);
       }
-      if (supaTriajes && supaTriajes.length > 0) {
+      if (Array.isArray(supaTriajes)) {
         setTriajes(supaTriajes);
       }
-      if (supaProfesionales && supaProfesionales.length > 0) {
+      if (Array.isArray(supaProfesionales) && supaProfesionales.length > 0) {
         setProfesionales(supaProfesionales);
       }
-      if (supaUsuarios && supaUsuarios.length > 0) {
+      if (Array.isArray(supaUsuarios) && supaUsuarios.length > 0) {
         setUsuarios(supaUsuarios);
       }
-      if (supaFuas && supaFuas.length > 0) {
+      if (Array.isArray(supaFuas)) {
         setFuas(supaFuas);
       }
     } catch (err: any) {
@@ -647,7 +698,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
 
-  // USUARIOS
+  // USUARIOS (Persistidos en la tabla cv_usuarios de Supabase)
   const addUsuario = (usuario: Omit<Usuario, 'id' | 'fechaCreacion'>) => {
     const newUsuario: Usuario = {
       ...usuario,
@@ -656,21 +707,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ultimoAcceso: 'Nunca',
     };
     setUsuarios((prev) => [...prev, newUsuario]);
+    if (isSupabaseConfigured()) {
+      supabaseService.insertUsuario(newUsuario).catch((e) => console.warn('Supabase insertUsuario error:', e));
+    }
   };
 
   const updateUsuario = (id: string, data: Partial<Usuario>) => {
     setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, ...data } : u)));
+    if (isSupabaseConfigured()) {
+      supabaseService.updateUsuario(id, data).catch((e) => console.warn('Supabase updateUsuario error:', e));
+    }
   };
 
   const deleteUsuario = (id: string) => {
     if (usuarios.length <= 1) return;
     setUsuarios((prev) => prev.filter((u) => u.id !== id));
+    if (isSupabaseConfigured()) {
+      supabaseService.deleteUsuario(id).catch((e) => console.warn('Supabase deleteUsuario error:', e));
+    }
   };
 
   const toggleUsuarioEstado = (id: string) => {
+    const user = usuarios.find((u) => u.id === id);
+    if (!user) return;
+    const nuevoEstado = user.estado === 'activo' ? 'inactivo' : 'activo';
     setUsuarios((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, estado: u.estado === 'activo' ? 'inactivo' : 'activo' } : u))
+      prev.map((u) => (u.id === id ? { ...u, estado: nuevoEstado } : u))
     );
+    if (isSupabaseConfigured()) {
+      supabaseService.updateUsuario(id, { estado: nuevoEstado }).catch((e) => console.warn('Supabase toggleUsuarioEstado error:', e));
+    }
   };
 
   // PROGRAMACIÓN ANUAL: Cálculo de citas y atenciones desglosadas por mes y seguro

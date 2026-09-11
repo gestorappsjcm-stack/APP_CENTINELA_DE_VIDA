@@ -412,6 +412,119 @@ export const supabaseService = {
     return null;
   },
 
+  async insertUsuario(usuario: Usuario): Promise<boolean> {
+    const client = getSupabase();
+    if (!client) return false;
+    try {
+      const payload = {
+        id: usuario.id,
+        usuario: usuario.usuario,
+        contrasena: usuario.contrasena || '123456',
+        nombres: usuario.nombres,
+        apellidos: usuario.apellidos,
+        rol: usuario.rol,
+        correo: usuario.correo || null,
+        telefono: usuario.telefono || null,
+        estado: usuario.estado,
+        permisos_modulos: usuario.permisosModulos,
+        fecha_creacion: usuario.fechaCreacion,
+        ultimo_acceso: usuario.ultimoAcceso || null,
+      };
+      const { error } = await client.from('cv_usuarios').insert([payload]);
+      if (error) {
+        console.warn('Error insertando en cv_usuarios:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Excepción insertando en cv_usuarios:', err);
+      return false;
+    }
+  },
+
+  async updateUsuario(id: string, data: Partial<Usuario>): Promise<boolean> {
+    const client = getSupabase();
+    if (!client) return false;
+    try {
+      const payload: Record<string, any> = {};
+      if (data.usuario !== undefined) payload.usuario = data.usuario;
+      if (data.contrasena !== undefined) payload.contrasena = data.contrasena;
+      if (data.nombres !== undefined) payload.nombres = data.nombres;
+      if (data.apellidos !== undefined) payload.apellidos = data.apellidos;
+      if (data.rol !== undefined) payload.rol = data.rol;
+      if (data.correo !== undefined) payload.correo = data.correo;
+      if (data.telefono !== undefined) payload.telefono = data.telefono;
+      if (data.estado !== undefined) payload.estado = data.estado;
+      if (data.permisosModulos !== undefined) payload.permisos_modulos = data.permisosModulos;
+      if (data.ultimoAcceso !== undefined) payload.ultimo_acceso = data.ultimoAcceso;
+
+      const { error } = await client.from('cv_usuarios').update(payload).eq('id', id);
+      return !error;
+    } catch (err) {
+      console.warn('Error actualizando en cv_usuarios:', err);
+      return false;
+    }
+  },
+
+  async deleteUsuario(id: string): Promise<boolean> {
+    const client = getSupabase();
+    if (!client) return false;
+    try {
+      const { error } = await client.from('cv_usuarios').delete().eq('id', id);
+      return !error;
+    } catch (err) {
+      console.warn('Error eliminando en cv_usuarios:', err);
+      return false;
+    }
+  },
+
+  // 7.1 Búsqueda real de identidad en padrón / pac_datos_personales
+  async buscarPersonaPorDni(dni: string): Promise<{
+    dni: string;
+    apellidos_nombres: string;
+    fecha_nacimiento?: string;
+    sexo?: 'M' | 'F';
+  } | null> {
+    const client = getSupabase();
+    if (!client) {
+      console.warn('Cliente Supabase no configurado para consulta en pac_datos_personales');
+      return null;
+    }
+    try {
+      const cleanDni = dni.trim();
+      const { data, error } = await client
+        .from('pac_datos_personales')
+        .select('dni, apellidos_nombres, fecha_nacimiento, sexo')
+        .eq('dni', cleanDni)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Error consultando pac_datos_personales:', error);
+        return null;
+      }
+
+      if (data && data.apellidos_nombres) {
+        let sexoNormalizado: 'M' | 'F' | undefined = undefined;
+        if (data.sexo) {
+          const s = String(data.sexo).trim().toUpperCase();
+          if (s === 'F' || s.startsWith('FEM')) sexoNormalizado = 'F';
+          else if (s === 'M' || s.startsWith('MAS')) sexoNormalizado = 'M';
+        }
+
+        return {
+          dni: String(data.dni || cleanDni),
+          apellidos_nombres: String(data.apellidos_nombres).trim(),
+          fecha_nacimiento: data.fecha_nacimiento ? String(data.fecha_nacimiento).trim() : undefined,
+          sexo: sexoNormalizado,
+        };
+      }
+      return null;
+    } catch (err) {
+      console.warn('Excepción buscando en pac_datos_personales:', err);
+      return null;
+    }
+  },
+
   // 8. FUA: cv_fua_historial y cv_fua_contador
   async getFuas(): Promise<FUA[] | null> {
     const client = getSupabase();

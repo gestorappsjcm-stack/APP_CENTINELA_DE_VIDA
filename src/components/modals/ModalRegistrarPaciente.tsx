@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { TipoDocumento, TipoSeguro } from '../../types';
-import { X, Search, Check, AlertTriangle, UserPlus, ShieldAlert } from 'lucide-react';
+import { X, Search, Check, AlertTriangle, UserPlus, ShieldAlert, AlertCircle, Loader2 } from 'lucide-react';
+import { supabaseService } from '../../services/supabaseService';
 
 export const ModalRegistrarPaciente: React.FC = () => {
   const { activeModal, setActiveModal, addPaciente, pacientes } = useApp();
@@ -33,7 +34,7 @@ export const ModalRegistrarPaciente: React.FC = () => {
 
   // Estados de validación
   const [isSearchingDNI, setIsSearchingDNI] = useState(false);
-  const [dniFound, setDniFound] = useState(false);
+  const [dniSearchStatus, setDniSearchStatus] = useState<'found' | 'not_found' | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
@@ -71,37 +72,33 @@ export const ModalRegistrarPaciente: React.FC = () => {
     setEdad(Math.max(0, diff));
   };
 
-  // Simulación de búsqueda en RENIEC interna (pac_datos_personales)
-  const buscarDNIInterno = () => {
-    if (tipoDoc !== 'DNI' || numDoc.length !== 8) return;
+  // Búsqueda real de identidad en la base de datos (tabla pac_datos_personales)
+  const buscarDNIInterno = async () => {
+    if (tipoDoc !== 'DNI' || numDoc.trim().length !== 8) return;
     setIsSearchingDNI(true);
-    setDniFound(false);
+    setDniSearchStatus(null);
 
-    setTimeout(() => {
-      setIsSearchingDNI(false);
-      // DNI demo conocidos o generados
-      if (numDoc === '45123890') {
-        setApellidosNombres('SANCHEZ LOPEZ, MARIA ELENA');
-        handleFechaNacimientoChange('1988-04-12');
-        setSexo('F');
-        setDniFound(true);
-      } else if (numDoc === '71239845') {
-        setApellidosNombres('CASTILLO MENDOZA, JUAN CARLOS');
-        handleFechaNacimientoChange('2001-09-24');
-        setSexo('M');
-        setDniFound(true);
+    try {
+      const persona = await supabaseService.buscarPersonaPorDni(numDoc);
+      if (persona && persona.apellidos_nombres) {
+        setApellidosNombres(persona.apellidos_nombres);
+        if (persona.fecha_nacimiento) {
+          handleFechaNacimientoChange(persona.fecha_nacimiento);
+        }
+        if (persona.sexo) {
+          setSexo(persona.sexo);
+        }
+        setDniSearchStatus('found');
       } else {
-        // Generador simulado para cualquier DNI válido de 8 dígitos
-        const apellidosDemo = ['ALVAREZ MENDOZA', 'QUISPE TORRES', 'GARCIA ROJAS', 'CHAVEZ PALOMINO', 'FLORES DIAZ'];
-        const nombresDemo = ['JUAN LUIS', 'ANA MARIA', 'CARLOS ENRIQUE', 'ROSA ELENA', 'PEDRO PABLO'];
-        const randomAp = apellidosDemo[parseInt(numDoc.slice(-1), 10) % apellidosDemo.length];
-        const randomNom = nombresDemo[parseInt(numDoc.slice(-2), 10) % nombresDemo.length];
-        setApellidosNombres(`${randomAp}, ${randomNom}`);
-        handleFechaNacimientoChange('1994-06-15');
-        setSexo(parseInt(numDoc.slice(-1), 10) % 2 === 0 ? 'F' : 'M');
-        setDniFound(true);
+        // No inventar datos ficticios: indicar no encontrado y pedir ingreso manual
+        setDniSearchStatus('not_found');
       }
-    }, 400);
+    } catch (e) {
+      console.warn('Error al buscar DNI:', e);
+      setDniSearchStatus('not_found');
+    } finally {
+      setIsSearchingDNI(false);
+    }
   };
 
   // Verificar si ya existe en el padrón
@@ -272,25 +269,68 @@ export const ModalRegistrarPaciente: React.FC = () => {
                     placeholder={tipoDoc === 'DNI' ? '8 dígitos' : 'Número de documento'}
                     maxLength={tipoDoc === 'DNI' ? 8 : 12}
                     value={numDoc}
-                    onChange={(e) => setNumDoc(e.target.value.replace(/\D/g, ''))}
-                    onBlur={buscarDNIInterno}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '');
+                      setNumDoc(val);
+                      if (val.length !== 8) {
+                        setDniSearchStatus(null);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (tipoDoc === 'DNI' && numDoc.trim().length === 8 && !dniSearchStatus && !isSearchingDNI) {
+                        buscarDNIInterno();
+                      }
+                    }}
                     className="w-full px-3 py-2 pr-20 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500 font-mono"
                   />
                   {tipoDoc === 'DNI' && (
                     <button
                       type="button"
                       onClick={buscarDNIInterno}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded text-[10px] font-semibold cursor-pointer flex items-center gap-1"
+                      disabled={isSearchingDNI || numDoc.length !== 8}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded text-[10px] font-semibold cursor-pointer flex items-center gap-1 transition-colors"
                     >
-                      <Search size={10} />
-                      {isSearchingDNI ? 'Buscando...' : 'Buscar'}
+                      {isSearchingDNI ? (
+                        <>
+                          <Loader2 size={10} className="animate-spin" />
+                          <span>Buscando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Search size={10} />
+                          <span>Buscar</span>
+                        </>
+                      )}
                     </button>
                   )}
                 </div>
-                {dniFound && (
-                  <span className="text-[10px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
-                    <Check size={11} /> Datos obtenidos de RENIEC / Padrón
+
+                {/* Mensaje de consulta en curso */}
+                {isSearchingDNI && (
+                  <span className="text-[11px] text-teal-600 dark:text-teal-400 font-medium mt-1 flex items-center gap-1">
+                    <Loader2 size={11} className="animate-spin" /> Consultando base de datos...
                   </span>
+                )}
+
+                {/* Mensaje de coincidencia encontrada */}
+                {dniSearchStatus === 'found' && (
+                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1 flex items-center gap-1 animate-in fade-in duration-150">
+                    <Check size={12} className="text-emerald-500 shrink-0" />
+                    paciente encontrado en nuestra base de datos
+                  </span>
+                )}
+
+                {/* Mensaje de no encontrado y solicitud de ingreso manual */}
+                {dniSearchStatus === 'not_found' && (
+                  <div className="mt-1 space-y-0.5 animate-in fade-in duration-150">
+                    <span className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                      <AlertCircle size={12} className="text-amber-500 shrink-0" />
+                      no encontrado en nuestra base de datos
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block pl-4">
+                      Por favor, complete los datos del paciente de manera manual.
+                    </span>
+                  </div>
                 )}
               </div>
             )}
