@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Paciente } from '../../types';
 import { X, Search, FileSpreadsheet, Eye, Trash2, Users, Filter } from 'lucide-react';
+import { ModalFichaCompletaPaciente } from './ModalFichaCompletaPaciente';
 
 export const ModalVerPacientes: React.FC = () => {
   const { activeModal, setActiveModal, pacientes, deletePaciente } = useApp();
@@ -206,25 +207,12 @@ export const ModalVerPacientes: React.FC = () => {
           </table>
         </div>
 
-        {/* Modal de Ficha Rápida del Paciente si se selecciona */}
+        {/* Ficha Completa Integral del Paciente */}
         {selectedPaciente && (
-          <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-            <div className="text-xs space-y-0.5">
-              <span className="font-bold text-slate-800 dark:text-slate-100">
-                Ficha rápida: {selectedPaciente.apellidos_nombres} ({selectedPaciente.hcl || selectedPaciente.numero_documento})
-              </span>
-              <p className="text-slate-500">
-                Dirección: {selectedPaciente.direccion || 'Sin registrar'} • Celular: {selectedPaciente.celular || 'No registrado'}
-                {selectedPaciente.tiene_tutor && ` • Tutor: ${selectedPaciente.tutor_nombres} (${selectedPaciente.tutor_parentesco})`}
-              </p>
-            </div>
-            <button
-              onClick={() => setSelectedPaciente(null)}
-              className="text-xs font-semibold px-3 py-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-md cursor-pointer"
-            >
-              Cerrar Detalle
-            </button>
-          </div>
+          <ModalFichaCompletaPaciente
+            paciente={selectedPaciente}
+            onClose={() => setSelectedPaciente(null)}
+          />
         )}
       </div>
     </div>

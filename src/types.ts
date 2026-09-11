@@ -71,6 +71,8 @@ export interface Paciente {
   celular?: string;
   estado: EstadoPaciente;
   fecha_ingreso: string;
+  etnia?: string;
+  origen_caso?: string;
   // Tutor
   tiene_tutor?: boolean;
   tutor_nombres?: string;
@@ -95,7 +97,7 @@ export type TipoProfesion =
 
 export interface Profesional {
   id: string;
-  dni: string;
+  dni?: string;
   apellidos_nombres: string;
   profesion: TipoProfesion | string;
   especialidad?: string;
@@ -112,6 +114,7 @@ export interface Cita {
   id: string;
   paciente_id: string;
   profesional_id?: string;
+  consultorio_id?: string;
   fecha_cita: string;
   hora_cita: string;
   tipo_cita: 'CONSULTA' | 'TRIAJE' | 'EMERGENCIA' | 'TELECONSULTA' | 'VISITA_DOMICILIARIA';
@@ -120,6 +123,7 @@ export interface Cita {
   observaciones?: string;
   triaje_completado?: boolean;
   atencion_completada?: boolean;
+  llamado_pantalla?: boolean;
 }
 
 export interface Triaje {

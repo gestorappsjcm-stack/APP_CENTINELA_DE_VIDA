@@ -1,11 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { TipoDocumento, TipoSeguro } from '../../types';
-import { X, Search, Check, AlertTriangle, UserPlus, ShieldAlert, AlertCircle, Loader2 } from 'lucide-react';
+import { Paciente, TipoDocumento, TipoSeguro } from '../../types';
+import {
+  X,
+  Search,
+  Check,
+  AlertTriangle,
+  UserPlus,
+  ShieldAlert,
+  AlertCircle,
+  Loader2,
+  ExternalLink,
+  Calendar,
+  FileText,
+  ArrowRight,
+} from 'lucide-react';
 import { supabaseService } from '../../services/supabaseService';
 
 export const ModalRegistrarPaciente: React.FC = () => {
-  const { activeModal, setActiveModal, addPaciente, pacientes } = useApp();
+  const { activeModal, setActiveModal, addPaciente, pacientes, setCurrentTab, setSelectedPacienteFichaId } = useApp();
 
   const [tipoDoc, setTipoDoc] = useState<TipoDocumento>('DNI');
   const [numDoc, setNumDoc] = useState('');
@@ -31,10 +44,13 @@ export const ModalRegistrarPaciente: React.FC = () => {
   const [tutorNumDoc, setTutorNumDoc] = useState('');
   const [tutorCelular, setTutorCelular] = useState('');
   const [tutorParentesco, setTutorParentesco] = useState('PADRE');
+  const [isSearchingTutorDNI, setIsSearchingTutorDNI] = useState(false);
+  const [tutorSearchStatus, setTutorSearchStatus] = useState<'found' | 'not_found' | null>(null);
 
-  // Estados de validación
+  // Estados de validación del paciente
   const [isSearchingDNI, setIsSearchingDNI] = useState(false);
   const [dniSearchStatus, setDniSearchStatus] = useState<'found' | 'not_found' | null>(null);
+  const [pacienteExistente, setPacienteExistente] = useState<Paciente | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
@@ -101,20 +117,45 @@ export const ModalRegistrarPaciente: React.FC = () => {
     }
   };
 
+  // Búsqueda real de identidad del tutor en pac_datos_personales
+  const buscarTutorDNIInterno = async () => {
+    if (tutorNumDoc.trim().length !== 8) return;
+    setIsSearchingTutorDNI(true);
+    setTutorSearchStatus(null);
+
+    try {
+      const persona = await supabaseService.buscarPersonaPorDni(tutorNumDoc.trim());
+      if (persona && persona.apellidos_nombres) {
+        setTutorNombres(persona.apellidos_nombres);
+        setTutorSearchStatus('found');
+      } else {
+        setTutorSearchStatus('not_found');
+      }
+    } catch (e) {
+      console.warn('Error al buscar DNI del tutor:', e);
+      setTutorSearchStatus('not_found');
+    } finally {
+      setIsSearchingTutorDNI(false);
+    }
+  };
+
   // Verificar si ya existe en el padrón
   const verificarDuplicado = () => {
     setDuplicateWarning(null);
+    setPacienteExistente(null);
     if (tipoDoc === 'INDOCUMENTADO') {
       if (hcl && hcl.trim().length > 2) {
         const existe = pacientes.find((p) => p.hcl?.toLowerCase() === hcl.trim().toLowerCase());
         if (existe) {
-          setDuplicateWarning(`YA REGISTRADO: ${existe.apellidos_nombres} con HCL ${existe.hcl}`);
+          setDuplicateWarning('REGISTRO DE PACIENTE YA EXISTE - CONTINUE CON LA CONSULTA O CITA');
+          setPacienteExistente(existe);
         }
       }
     } else if (numDoc && numDoc.trim().length >= 8) {
       const existe = pacientes.find((p) => p.tipo_documento === tipoDoc && p.numero_documento === numDoc.trim());
       if (existe) {
-        setDuplicateWarning(`YA REGISTRADO: ${existe.apellidos_nombres} (${tipoDoc}: ${existe.numero_documento})`);
+        setDuplicateWarning('REGISTRO DE PACIENTE YA EXISTE - CONTINUE CON LA CONSULTA O CITA');
+        setPacienteExistente(existe);
       }
     }
   };
@@ -221,9 +262,51 @@ export const ModalRegistrarPaciente: React.FC = () => {
           )}
 
           {duplicateWarning && (
-            <div className="p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl text-xs flex items-center gap-2 font-medium">
-              <ShieldAlert size={16} className="shrink-0 text-amber-600" />
-              <span>{duplicateWarning}</span>
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-400 dark:border-amber-600 text-amber-950 dark:text-amber-100 rounded-xl space-y-3 animate-in fade-in duration-200 shadow-sm">
+              <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
+                <ShieldAlert size={20} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                <span className="font-extrabold text-xs sm:text-sm tracking-wide">
+                  REGISTRO DE PACIENTE YA EXISTE - CONTINUE CON LA CONSULTA O CITA
+                </span>
+              </div>
+              {pacienteExistente && (
+                <div className="text-xs bg-white dark:bg-slate-850 p-3 rounded-lg border border-amber-300 dark:border-amber-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                  <div>
+                    <p className="font-bold text-slate-900 dark:text-white text-sm">
+                      {pacienteExistente.apellidos_nombres}
+                    </p>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                      {pacienteExistente.tipo_documento}: <span className="font-mono font-semibold">{pacienteExistente.numero_documento || pacienteExistente.codigo_temporal}</span> • HCL: <span className="font-semibold text-teal-700 dark:text-teal-400">{pacienteExistente.hcl || 'Sin HCL'}</span> • Seguro: <span className="font-semibold">{pacienteExistente.seguro}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveModal(null);
+                        setCurrentTab('agenda');
+                      }}
+                      className="px-3.5 py-2 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                    >
+                      <Calendar size={14} />
+                      <span>Continuar con Cita</span>
+                      <ArrowRight size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPacienteFichaId(pacienteExistente.id);
+                        setCurrentTab('ficha_paciente');
+                        setActiveModal(null);
+                      }}
+                      className="px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-750 dark:text-white text-slate-800 rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors border border-slate-300 dark:border-slate-700"
+                    >
+                      <FileText size={14} />
+                      <span>Ver Ficha</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -428,9 +511,11 @@ export const ModalRegistrarPaciente: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Condición de Seguro *
-              </label>
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Condición de Seguro *
+                </label>
+              </div>
               <select
                 value={seguro}
                 onChange={(e) => setSeguro(e.target.value as TipoSeguro)}
@@ -443,6 +528,30 @@ export const ModalRegistrarPaciente: React.FC = () => {
                 <option value="NINGUNO">Ninguno (Particular)</option>
                 <option value="OTRO">Otro</option>
               </select>
+
+              {/* Enlaces de consulta en línea SIS y EsSalud lado a lado */}
+              <div className="mt-2 flex items-center gap-2">
+                <a
+                  href="https://cel.sis.gob.pe/SisConsultaEnLinea"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors shadow-2xs cursor-pointer"
+                  title="Abrir Consulta SIS en Línea (cel.sis.gob.pe)"
+                >
+                  <ExternalLink size={12} />
+                  <span>Consulta SIS</span>
+                </a>
+                <a
+                  href="https://dondemeatiendo.essalud.gob.pe/#/consulta"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 border border-sky-200 dark:border-sky-800 transition-colors shadow-2xs cursor-pointer"
+                  title="Abrir Consulta EsSalud - Dónde me atiendo"
+                >
+                  <ExternalLink size={12} />
+                  <span>Consulta EsSalud</span>
+                </a>
+              </div>
             </div>
           </div>
 
@@ -512,48 +621,99 @@ export const ModalRegistrarPaciente: React.FC = () => {
             </label>
 
             {tieneTutor && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                    Nombres del Tutor
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Apellidos y nombres"
-                    value={tutorNombres}
-                    onChange={(e) => setTutorNombres(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg uppercase"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                    DNI del Tutor
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="8 dígitos"
-                    maxLength={8}
-                    value={tutorNumDoc}
-                    onChange={(e) => setTutorNumDoc(e.target.value.replace(/\D/g, ''))}
-                    className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                    Parentesco
-                  </label>
-                  <select
-                    value={tutorParentesco}
-                    onChange={(e) => setTutorParentesco(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer"
-                  >
-                    <option value="MADRE">Madre</option>
-                    <option value="PADRE">Padre</option>
-                    <option value="CONYUGE">Cónyuge / Pareja</option>
-                    <option value="HIJO">Hijo(a)</option>
-                    <option value="HERMANO">Hermano(a)</option>
-                    <option value="OTRO">Otro</option>
-                  </select>
+              <div className="space-y-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* 1. Primero DNI del Tutor con búsqueda */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                      DNI del Tutor
+                    </label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="8 dígitos"
+                        maxLength={8}
+                        value={tutorNumDoc}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          setTutorNumDoc(val);
+                          setTutorSearchStatus(null);
+                        }}
+                        onBlur={() => {
+                          if (tutorNumDoc.trim().length === 8 && !tutorNombres) {
+                            buscarTutorDNIInterno();
+                          }
+                        }}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono focus:outline-none focus:border-teal-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={buscarTutorDNIInterno}
+                        disabled={isSearchingTutorDNI || tutorNumDoc.length !== 8}
+                        className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                        title="Buscar DNI en tabla de consultas pac_datos_personales"
+                      >
+                        {isSearchingTutorDNI ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <Search size={13} />
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Estados de búsqueda del tutor */}
+                    {isSearchingTutorDNI && (
+                      <span className="text-[10px] text-teal-600 dark:text-teal-400 flex items-center gap-1 mt-1">
+                        <Loader2 size={10} className="animate-spin" />
+                        Consultando base de datos...
+                      </span>
+                    )}
+                    {tutorSearchStatus === 'found' && (
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 mt-1">
+                        <Check size={11} className="text-emerald-600" />
+                        tutor encontrado en nuestra base de datos
+                      </span>
+                    )}
+                    {tutorSearchStatus === 'not_found' && (
+                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 mt-1">
+                        <AlertCircle size={11} className="text-amber-500 shrink-0" />
+                        no encontrado en nuestra base de datos (ingresar manualmente)
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 2. Luego Apellidos y Nombres del Tutor */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                      Apellidos y Nombres del Tutor
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="APELLIDOS Y NOMBRES"
+                      value={tutorNombres}
+                      onChange={(e) => setTutorNombres(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg uppercase focus:outline-none focus:border-teal-500"
+                    />
+                  </div>
+
+                  {/* 3. Parentesco */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                      Parentesco
+                    </label>
+                    <select
+                      value={tutorParentesco}
+                      onChange={(e) => setTutorParentesco(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer focus:outline-none focus:border-teal-500"
+                    >
+                      <option value="MADRE">Madre</option>
+                      <option value="PADRE">Padre</option>
+                      <option value="CONYUGE">Cónyuge / Pareja</option>
+                      <option value="HIJO">Hijo(a)</option>
+                      <option value="HERMANO">Hermano(a)</option>
+                      <option value="OTRO">Otro</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             )}

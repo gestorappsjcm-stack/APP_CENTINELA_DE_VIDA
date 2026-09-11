@@ -11,6 +11,7 @@ import {
   Filter,
   FileText,
 } from 'lucide-react';
+import { ModalFichaCompletaPaciente } from '../modals/ModalFichaCompletaPaciente';
 
 export const PacientesView: React.FC = () => {
   const { pacientes, setActiveModal, deletePaciente, setSelectedPacienteFichaId, setCurrentTab } = useApp();
@@ -241,37 +242,12 @@ export const PacientesView: React.FC = () => {
           </table>
         </div>
 
-        {/* Ficha Rápida Inferior */}
+        {/* Ficha Completa Integral del Paciente */}
         {selectedPaciente && (
-          <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-            <div className="text-xs space-y-0.5">
-              <span className="font-bold text-slate-800 dark:text-slate-100">
-                Ficha rápida: {selectedPaciente.apellidos_nombres} ({selectedPaciente.hcl || selectedPaciente.numero_documento})
-              </span>
-              <p className="text-slate-500">
-                Dirección: {selectedPaciente.direccion || 'Sin registrar'} • Celular: {selectedPaciente.celular || 'No registrado'}
-                {selectedPaciente.tiene_tutor && ` • Tutor: ${selectedPaciente.tutor_nombres} (${selectedPaciente.tutor_parentesco})`}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setSelectedPacienteFichaId(selectedPaciente.id);
-                  setCurrentTab('ficha_paciente');
-                }}
-                className="text-xs font-bold px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg flex items-center gap-1 cursor-pointer shadow-xs"
-              >
-                <FileText size={13} />
-                <span>Abrir Ficha Completa</span>
-              </button>
-              <button
-                onClick={() => setSelectedPaciente(null)}
-                className="text-xs font-semibold px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-lg cursor-pointer"
-              >
-                Cerrar Detalle
-              </button>
-            </div>
-          </div>
+          <ModalFichaCompletaPaciente
+            paciente={selectedPaciente}
+            onClose={() => setSelectedPaciente(null)}
+          />
         )}
       </div>
     </div>

@@ -508,8 +508,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Verificar si el usuario actual tiene acceso al módulo
   const canAccess = (moduleId: ModuleId): boolean => {
-    if (!currentUser) return false;
+    if (!currentUser) return true;
     if (currentUser.rol === 'administrador') return true;
+    // La ficha clínica y el display de turnos son de acceso universal en el CSMC
+    if (moduleId === 'ficha_paciente' || moduleId === 'display_turnos') return true;
+    if (!currentUser.permisosModulos || !Array.isArray(currentUser.permisosModulos)) return true;
     return currentUser.permisosModulos.includes(moduleId);
   };
 
