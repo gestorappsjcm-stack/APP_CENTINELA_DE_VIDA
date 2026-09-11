@@ -42,7 +42,7 @@ export const ModalSupabaseStatus: React.FC = () => {
                 Conexión a Base de Datos Supabase
               </h3>
               <p className="text-xs text-white/80">
-                Centinela de Vida • CSMC (Red de Salud Chincha)
+                Centinela de Vida • Unidad de Seguros (U.E. 401)
               </p>
             </div>
           </div>

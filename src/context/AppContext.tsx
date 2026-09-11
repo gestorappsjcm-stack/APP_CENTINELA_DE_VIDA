@@ -116,13 +116,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [currentUser, setCurrentUser] = useState<Usuario>(() => {
+    const savedSession = sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_active_session`);
+    if (savedSession) {
+      try {
+        const parsed = JSON.parse(savedSession);
+        if (parsed && parsed.id) return parsed;
+      } catch (e) {
+        console.warn('Error leyendo sesion activa:', e);
+      }
+    }
     return usuarios[0] || INITIAL_USUARIOS[0];
   });
 
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [selectedPacienteFichaId, setSelectedPacienteFichaId] = useState<string | null>(null);
-  const [isLoggedOut, setIsLoggedOut] = useState<boolean>(false);
+  // Por defecto, iniciar SIEMPRE en la pantalla de Login a menos que exista una sesión activa
+  const [isLoggedOut, setIsLoggedOut] = useState<boolean>(() => {
+    const active = sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_active_session`);
+    return !active;
+  });
 
   const [pacientes, setPacientes] = useState<Paciente[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_pacientes`);
@@ -343,10 +356,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     setCurrentUser(user);
     setIsLoggedOut(false);
+    try {
+      sessionStorage.setItem(`${LOCAL_STORAGE_KEY}_active_session`, JSON.stringify(user));
+    } catch (e) {
+      console.warn('Error guardando sesion:', e);
+    }
     return { success: true };
   };
 
   const logoutUser = () => {
+    try {
+      sessionStorage.removeItem(`${LOCAL_STORAGE_KEY}_active_session`);
+    } catch (e) {
+      console.warn('Error eliminando sesion:', e);
+    }
     setIsLoggedOut(true);
   };
 

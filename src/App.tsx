@@ -97,13 +97,13 @@ const AppShell: React.FC = () => {
         <MainContent />
       </main>
 
-      {/* Footer Institucional MINSA */}
+      {/* Footer Institucional / Autoría */}
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md py-4 px-6 text-center text-xs text-slate-500 flex flex-col sm:flex-row justify-between items-center gap-2">
         <span>
-          Centro de Salud Mental Comunitario (CSMC) Centinela de Vida • Red de Salud Chincha • DIRESA Ica
+          CSMC Centinela de Vida • Proyecto de la Unidad de Seguros (U.E. 401)
         </span>
-        <span className="font-mono text-[11px] text-teal-700 dark:text-teal-400">
-          RENAES 00028492 • Sistema Integral Clínico, FUA & Gestión
+        <span className="text-[11px] text-teal-700 dark:text-teal-400 font-medium">
+          Desarrollado por: Juan Carlos Castillo Magallanes (Informático U.E. 401)
         </span>
       </footer>
 
