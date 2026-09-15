@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Paciente } from '../../types';
+import { parseMedicamentosList } from '../../lib/medicamentosHelper';
 import {
   FileText,
   User,
@@ -589,28 +590,30 @@ export const FichaPacienteView: React.FC = () => {
                     Medicamentos Prescritos en el CSMC
                   </h4>
                   <div className="space-y-3">
-                    {atencionesPaciente.flatMap((a) => a.medicamentos || []).length === 0 ? (
-                      <p className="text-slate-400">No se han registrado prescripciones para este paciente.</p>
-                    ) : (
-                      atencionesPaciente.flatMap((a) => a.medicamentos || []).map((m, idx) => (
+                    {(() => {
+                      const todosLosMeds = atencionesPaciente.flatMap((a) => parseMedicamentosList(a.medicamentos));
+                      if (todosLosMeds.length === 0) {
+                        return <p className="text-slate-400">No se han registrado prescripciones para este paciente.</p>;
+                      }
+                      return todosLosMeds.map((m, idx) => (
                         <div
-                          key={idx}
+                          key={m.id || idx}
                           className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl flex items-center justify-between"
                         >
                           <div className="space-y-0.5">
                             <div className="font-bold text-teal-700 dark:text-teal-400">
-                              {m.nombre || m.medicamento} {m.concentracion} ({m.presentacion})
+                              {m.medicamento || m.nombre} {m.concentracion ? `(${m.concentracion})` : ''} {m.presentacion ? `[${m.presentacion}]` : ''}
                             </div>
                             <div className="text-slate-500 text-[11px]">
-                              Dosis: {m.dosis} • Frecuencia: {m.frecuencia} • Duración: {m.duracion}
+                              {m.dosis ? `Dosis: ${m.dosis}` : ''} {m.frecuencia ? `• Frecuencia: ${m.frecuencia}` : ''} {m.duracion ? `• Duración: ${m.duracion}` : ''}
                             </div>
                           </div>
                           <div className="text-right font-mono font-bold text-slate-700 dark:text-slate-300">
                             Cant: {m.cantidad || 1}
                           </div>
                         </div>
-                      ))
-                    )}
+                      ));
+                    })()}
                   </div>
                 </div>
               )}

@@ -1,5 +1,6 @@
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import { Paciente, Cita, Triaje, AtencionClinica, Profesional, Usuario, FUA } from '../types';
+import { parseMedicamentosList } from '../lib/medicamentosHelper';
 
 export interface SupabaseDashboardStats {
   totalPacientes?: number;
@@ -11,7 +12,7 @@ export interface SupabaseDashboardStats {
 }
 
 export const supabaseService = {
-  // Test de conexión
+  // Test de conexión robusto multivariable
   async checkConnection(): Promise<{ connected: boolean; message: string; details?: any }> {
     if (!isSupabaseConfigured()) {
       return {
@@ -26,26 +27,65 @@ export const supabaseService = {
     }
 
     try {
-      // Intentar leer de v_cv_dashboard_resumen o cv_configuracion o cv_pacientes
-      const { data, error } = await client.from('v_cv_dashboard_resumen').select('*').limit(1);
-      if (!error) {
-        return { connected: true, message: 'Conectado a Supabase (Vista v_cv_dashboard_resumen activa)', details: data };
+      // 1. Probar vista principal de dashboard
+      const { data: viewData, error: viewError } = await client.from('v_cv_dashboard_resumen').select('*').limit(1);
+      if (!viewError) {
+        return {
+          connected: true,
+          message: 'Conectado a Supabase (Vista v_cv_dashboard_resumen activa y sincronizada)',
+          details: viewData,
+        };
       }
 
-      // Probar cv_pacientes si la vista no tiene datos o permisos
+      // 2. Probar tabla cv_pacientes
       const { data: pacData, error: pacError } = await client.from('cv_pacientes').select('id').limit(1);
       if (!pacError) {
-        return { connected: true, message: 'Conectado a Supabase (Tabla cv_pacientes activa)', details: pacData };
+        return {
+          connected: true,
+          message: 'Conectado a Supabase (Tabla cv_pacientes activa)',
+          details: pacData,
+        };
       }
 
-      // Si hay error en ambas
+      // 3. Probar tabla cv_atenciones
+      const { data: atnData, error: atnError } = await client.from('cv_atenciones').select('id').limit(1);
+      if (!atnError) {
+        return {
+          connected: true,
+          message: 'Conectado a Supabase (Tabla cv_atenciones activa)',
+          details: atnData,
+        };
+      }
+
+      // 4. Probar tabla cv_citas
+      const { data: citasData, error: citasError } = await client.from('cv_citas').select('id').limit(1);
+      if (!citasError) {
+        return {
+          connected: true,
+          message: 'Conectado a Supabase (Tabla cv_citas activa)',
+          details: citasData,
+        };
+      }
+
+      // 5. Probar tabla cv_usuarios
+      const { data: usrData, error: usrError } = await client.from('cv_usuarios').select('id').limit(1);
+      if (!usrError) {
+        return {
+          connected: true,
+          message: 'Conectado a Supabase (Tabla cv_usuarios activa)',
+          details: usrData,
+        };
+      }
+
+      // Si ninguna tabla respondió con éxito
+      const ultimoError = viewError?.message || pacError?.message || atnError?.message || citasError?.message || 'Error de permisos o esquema';
       return {
         connected: false,
-        message: `Error al consultar Supabase: ${error?.message || pacError?.message}`,
-        details: { error, pacError },
+        message: `Fallo al consultar tablas en Supabase: ${ultimoError}`,
+        details: { viewError, pacError, atnError, citasError },
       };
     } catch (err: any) {
-      return { connected: false, message: `Fallo de red o configuración: ${err?.message || err}` };
+      return { connected: false, message: `Fallo de red o conexión: ${err?.message || err}` };
     }
   },
 
@@ -286,7 +326,7 @@ export const supabaseService = {
           cie10_2: a.cie10_2,
           plan_tratamiento: a.plan_tratamiento || a.plan_trabajo || '',
           recomendaciones: a.recomendaciones,
-          medicamentos: a.medicamentos || a.receta_medicamentos || [],
+          medicamentos: parseMedicamentosList(a.medicamentos ?? a.receta_medicamentos ?? []),
           estado: 'COMPLETADA',
         }));
       }
@@ -569,10 +609,61 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return false;
     try {
-      const { error } = await client.from('cv_fua_historial').insert([fua]);
+      // Construir payload limpio con las columnas estándar de la tabla cv_fua_historial
+      const payload: Record<string, any> = {
+        numero_fua: fua.numero_fua,
+        fecha: fua.fecha,
+        hora: fua.hora,
+        paciente_id: fua.paciente_id,
+        codigo_renaes: fua.codigo_renaes || fua.renaiess || '00003414',
+        diresa: fua.diresa || 'DIRESA ICA / RED CHINCHA',
+        establecimiento: fua.establecimiento || 'HOSPITAL SAN JOSÉ DE CHINCHA',
+        componente_sis: fua.componente_sis || 'SUBSIDIADO',
+        codigo_afiliacion_sis: fua.codigo_afiliacion_sis || '',
+        tipo_atencion: fua.tipo_atencion || 'AMBULATORIA',
+        codigo_prestacional: fua.codigo_prestacional || '056',
+        profesional_id: fua.profesional_id,
+        triaje_id: fua.triaje_id || null,
+        atencion_id: fua.atencion_id || null,
+        presion_arterial: fua.presion_arterial || null,
+        frecuencia_cardiaca: fua.frecuencia_cardiaca || null,
+        frecuencia_respiratoria: fua.frecuencia_respiratoria || null,
+        peso_kg: fua.peso_kg || null,
+        talla_cm: fua.talla_cm || null,
+        diagnosticos: Array.isArray(fua.diagnosticos) ? fua.diagnosticos : [],
+        medicamentos: Array.isArray(fua.medicamentos) ? fua.medicamentos : [],
+        observaciones: fua.observaciones || null,
+        estado: fua.estado || 'REGISTRADO',
+      };
+
+      // Si el id es generado en base de datos o numérico, no enviar prefijo local 'fua-'
+      if (fua.id && !fua.id.startsWith('fua-')) {
+        payload.id = fua.id;
+      }
+
+      const { error } = await client.from('cv_fua_historial').insert([payload]);
+      if (error) {
+        console.warn('Error insertando en cv_fua_historial:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Excepción insertando FUA en Supabase:', err);
+      return false;
+    }
+  },
+
+  async updateAtencionFua(atencionId: string, fuaId: string): Promise<boolean> {
+    const client = getSupabase();
+    if (!client || !atencionId) return false;
+    try {
+      const { error } = await client
+        .from('cv_atenciones')
+        .update({ fua_generado: true, fua_id: fuaId })
+        .eq('id', atencionId);
       return !error;
     } catch (err) {
-      console.warn('Error insertando FUA en Supabase:', err);
+      console.warn('No se pudo actualizar fua_id en cv_atenciones:', err);
       return false;
     }
   },

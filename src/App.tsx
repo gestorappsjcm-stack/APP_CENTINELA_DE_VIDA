@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
 import { NavTabs } from './components/NavTabs';
@@ -25,7 +25,7 @@ const MainContent: React.FC = () => {
   const { currentTab, setCurrentTab, canAccess, currentUser } = useApp();
 
   // Validación estricta de autorización de módulo para el usuario activo
-  const hasAccess = canAccess(currentTab);
+  const hasAccess = canAccess(currentTab as any);
 
   if (!hasAccess) {
     return (
@@ -116,7 +116,7 @@ const AppShell: React.FC = () => {
 };
 
 interface ErrorBoundaryProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 interface ErrorBoundaryState {
@@ -124,21 +124,18 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class AppErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
+class AppErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  override state: ErrorBoundaryState = { hasError: false, error: null };
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  public static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+  public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('AppErrorBoundary capturó un error:', error, errorInfo);
   }
 
-  render() {
+  public override render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex items-center justify-center p-6 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100">

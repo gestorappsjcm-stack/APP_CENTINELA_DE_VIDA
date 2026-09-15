@@ -9,6 +9,7 @@ import {
 } from '../../types';
 import { CIE10_COMUNES, MEDICAMENTOS_SALUD_MENTAL } from '../../data/mockData';
 import { FuaPreviewModal } from '../fua/FuaPreviewModal';
+import { parseMedicamentosList } from '../../lib/medicamentosHelper';
 import {
   Stethoscope,
   Bell,
@@ -60,6 +61,7 @@ export const AtencionView: React.FC = () => {
   const [selectedFuaForPreview, setSelectedFuaForPreview] = useState<FUA | null>(null);
   const [selectedAtencionDetail, setSelectedAtencionDetail] = useState<AtencionClinica | null>(null);
   const [atencionRecienGuardada, setAtencionRecienGuardada] = useState<AtencionClinica | null>(null);
+  const [fuaSuccessToast, setFuaSuccessToast] = useState<{ numeroFua: string; paciente: string } | null>(null);
 
   // Estados de Filtro para Pacientes Atendidos
   const [searchTermAtendidos, setSearchTermAtendidos] = useState('');
@@ -118,26 +120,32 @@ export const AtencionView: React.FC = () => {
   // =========================================================================
   const getFuaForAtencion = (atn: AtencionClinica): FUA | undefined => {
     if (atn.fua_id) {
-      const f = fuas.find((item) => item.id === atn.fua_id);
+      const f = fuas.find((item) => String(item.id) === String(atn.fua_id));
       if (f) return f;
     }
-    return fuas.find((item) => item.atencion_id === atn.id);
+    return fuas.find(
+      (item) =>
+        (item.atencion_id && String(item.atencion_id) === String(atn.id)) ||
+        (String(item.paciente_id) === String(atn.paciente_id) && item.fecha === atn.fecha_atencion)
+    );
   };
 
   // =========================================================================
   // HELPER: GENERAR FUA OFICIAL PARA UNA ATENCIÓN
   // =========================================================================
   const handleGenerarFuaParaAtencion = (atn: AtencionClinica) => {
-    const pac = pacientes.find((p) => p.id === atn.paciente_id);
+    const pac = pacientes.find((p) => String(p.id) === String(atn.paciente_id));
     if (!pac) {
       alert('No se encontró el paciente asociado a esta atención.');
       return;
     }
 
-    const prof = profesionales.find((p) => p.id === atn.profesional_id) || profesionales[0];
+    const prof =
+      profesionales.find((p) => String(p.id) === String(atn.profesional_id)) ||
+      profesionales[0];
     const triaje =
-      triajes.find((t) => t.id === atn.triaje_id) ||
-      triajes.find((t) => t.paciente_id === pac.id);
+      triajes.find((t) => String(t.id) === String(atn.triaje_id)) ||
+      triajes.find((t) => String(t.paciente_id) === String(pac.id));
 
     const diagnosticosFua: FUA['diagnosticos'] = [];
     if (atn.diagnostico_1) {
@@ -175,17 +183,18 @@ export const AtencionView: React.FC = () => {
     }
 
     const medicamentosFua: FUA['medicamentos'] = [];
-    if (atn.medicamentos && atn.medicamentos.length > 0) {
-      atn.medicamentos.forEach((m, idx) => {
+    const medsList = parseMedicamentosList(atn.medicamentos);
+    if (medsList.length > 0) {
+      medsList.forEach((m, idx) => {
         medicamentosFua.push({
           codigo_sismed: `0289${idx + 1}`,
-          descripcion: m.medicamento,
-          cantidad: m.cantidad,
-          indicacion: `${m.dosis} cada ${m.frecuencia} por ${m.duracion}`,
+          descripcion: m.medicamento || m.nombre || 'MEDICAMENTO',
+          cantidad: m.cantidad || 1,
+          indicacion: `${m.dosis || ''} cada ${m.frecuencia || ''} por ${m.duracion || ''}`.trim() || 'Según indicación médica',
           forma_farmaceutica: m.presentacion || 'TAB',
           concentracion: m.concentracion || '10mg',
-          cantidad_prescrita: m.cantidad,
-          cantidad_entregada: m.cantidad,
+          cantidad_prescrita: m.cantidad || 1,
+          cantidad_entregada: m.cantidad || 1,
           diagnostico_relacionado: '1',
         });
       });
@@ -225,9 +234,9 @@ export const AtencionView: React.FC = () => {
       codigo_afiliacion_sis: `150-1-${pac.numero_documento || pac.codigo_temporal || '00000000'}`,
       tipo_atencion: 'AMBULATORIA',
       codigo_prestacional: '056',
-      profesional_id: prof.id,
+      profesional_id: prof ? String(prof.id) : (atn.profesional_id ? String(atn.profesional_id) : 'prof-1'),
       triaje_id: atn.triaje_id || triaje?.id,
-      atencion_id: atn.id,
+      atencion_id: String(atn.id),
       presion_arterial: atn.presion_arterial || triaje?.presion_arterial || '120/80',
       frecuencia_cardiaca: atn.frecuencia_cardiaca ? parseInt(atn.frecuencia_cardiaca) : 72,
       frecuencia_respiratoria: atn.frecuencia_respiratoria ? parseInt(atn.frecuencia_respiratoria) : 18,
@@ -263,8 +272,108 @@ export const AtencionView: React.FC = () => {
         hora: new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }),
         estado: 'REGISTRADO',
       };
+      setFuaSuccessToast({
+        numeroFua: res.numeroFua || '',
+        paciente: pac.apellidos_nombres,
+      });
       setSelectedFuaForPreview(nuevoFua);
     }
+  };
+
+  // Generar todos los FUAs pendientes en lote
+  const handleGenerarTodosFuasPendientes = () => {
+    const pendientes = atenciones.filter((a) => !getFuaForAtencion(a));
+    if (pendientes.length === 0) {
+      alert('Todas las atenciones ya cuentan con FUA generado.');
+      return;
+    }
+
+    let generados = 0;
+    for (const atn of pendientes) {
+      const pac = pacientes.find((p) => String(p.id) === String(atn.paciente_id));
+      if (!pac) continue;
+
+      const prof =
+        profesionales.find((p) => String(p.id) === String(atn.profesional_id)) ||
+        profesionales[0];
+      const triaje =
+        triajes.find((t) => String(t.id) === String(atn.triaje_id)) ||
+        triajes.find((t) => String(t.paciente_id) === String(pac.id));
+
+      const diagnosticosFua: FUA['diagnosticos'] = [];
+      if (atn.diagnostico_1) {
+        diagnosticosFua.push({
+          codigo: atn.cie10_1 || 'F32.9',
+          descripcion: atn.diagnostico_1,
+          tipo: 'D',
+          tipo_ingreso: 'D',
+          cie_ingreso: atn.cie10_1 || 'F32.9',
+          tipo_egreso: 'D',
+          cie_egreso: atn.cie10_1 || 'F32.9',
+        });
+      }
+      if (diagnosticosFua.length === 0) {
+        diagnosticosFua.push({
+          codigo: 'F32.1',
+          descripcion: 'EPISODIO DEPRESIVO MODERADO',
+          tipo: 'D',
+          tipo_ingreso: 'D',
+          cie_ingreso: 'F32.1',
+          tipo_egreso: 'D',
+          cie_egreso: 'F32.1',
+        });
+      }
+
+      const pesoVal = atn.peso ? parseFloat(atn.peso) : triaje?.peso ? Number(triaje.peso) : 65;
+      const tallaVal = atn.talla ? parseFloat(atn.talla) : triaje?.talla ? Number(triaje.talla) : 165;
+
+      const fuaData: Omit<FUA, 'id' | 'numero_fua' | 'fecha' | 'hora' | 'estado'> = {
+        paciente_id: pac.id,
+        codigo_renaes: fuaConfig?.codigo_renipress || '00003414',
+        renaiess: fuaConfig?.codigo_renipress || '00003414',
+        anio_fua: fuaConfig?.anio || 2026,
+        diresa: 'DIRESA ICA / RED CHINCHA',
+        establecimiento: fuaConfig?.nombre_ipress || 'HOSPITAL SAN JOSÉ DE CHINCHA',
+        componente_sis: 'SUBSIDIADO',
+        codigo_afiliacion_sis: `150-1-${pac.numero_documento || pac.codigo_temporal || '00000000'}`,
+        tipo_atencion: 'AMBULATORIA',
+        codigo_prestacional: '056',
+        profesional_id: prof ? String(prof.id) : (atn.profesional_id ? String(atn.profesional_id) : 'prof-1'),
+        triaje_id: atn.triaje_id || triaje?.id,
+        atencion_id: String(atn.id),
+        presion_arterial: atn.presion_arterial || triaje?.presion_arterial || '120/80',
+        frecuencia_cardiaca: atn.frecuencia_cardiaca ? parseInt(atn.frecuencia_cardiaca) : 72,
+        frecuencia_respiratoria: atn.frecuencia_respiratoria ? parseInt(atn.frecuencia_respiratoria) : 18,
+        peso_kg: pesoVal,
+        talla_cm: tallaVal,
+        imc: tallaVal > 0 ? Number((pesoVal / Math.pow(tallaVal / 100, 2)).toFixed(1)) : 23.8,
+        diagnosticos: diagnosticosFua,
+        medicamentos: [],
+        procedimientos: [
+          {
+            cpms: '90834',
+            descripcion: 'PSICOTERAPIA INDIVIDUAL DE 45 A 50 MINUTOS',
+            ind: '1',
+            eje: '1',
+            dx: '1',
+            res: 'COMPLETO',
+          },
+        ],
+        observaciones: `Atención clínica ambulatoria vinculada a Historia Clínica ${pac.hcl || 'S/N'}. Control programado.`,
+        personal_atiende: 'IPRESS',
+        lugar_atencion: 'INTRAMURAL',
+        atencion_directa: true,
+        destino: 'CITA',
+      };
+
+      addFUA(fuaData);
+      generados++;
+    }
+
+    setFuaSuccessToast({
+      numeroFua: `Lote de ${generados} FUAs`,
+      paciente: 'Todos los pacientes atendidos pendientes',
+    });
   };
 
   // =========================================================================
@@ -272,7 +381,7 @@ export const AtencionView: React.FC = () => {
   // =========================================================================
   const atencionesFiltradas = useMemo(() => {
     return atenciones.filter((atn) => {
-      const pac = pacientes.find((p) => p.id === atn.paciente_id);
+      const pac = pacientes.find((p) => String(p.id) === String(atn.paciente_id));
       const fua = getFuaForAtencion(atn);
 
       // Filtro de Texto
@@ -591,6 +700,27 @@ export const AtencionView: React.FC = () => {
             </div>
           </div>
 
+          {/* NOTIFICACIÓN ÉXITO FUA */}
+          {fuaSuccessToast && (
+            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex items-center justify-between text-xs text-emerald-900 dark:text-emerald-200 animate-in fade-in">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle size={20} className="text-emerald-600 shrink-0" />
+                <div>
+                  <strong className="font-bold">¡FUA Generado con Éxito!</strong>
+                  <p className="text-[11px] opacity-90 mt-0.5">
+                    Se registró <strong>{fuaSuccessToast.numeroFua}</strong> para {fuaSuccessToast.paciente}. Puede visualizarlo e imprimirlo inmediatamente.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setFuaSuccessToast(null)}
+                className="text-emerald-700 hover:text-emerald-900 dark:text-emerald-400 p-1.5 rounded-lg cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
           {/* BANNER ORIENTATIVO */}
           <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
             <div className="flex items-start gap-2.5">
@@ -606,12 +736,24 @@ export const AtencionView: React.FC = () => {
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setCurrentTab('fua')}
-              className="px-3.5 py-2 bg-[#1A2B4A] hover:bg-[#243b5e] text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer shadow-xs transition-all"
-            >
-              Configurar Lote / Rango FUA
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {kpisAtendidos.sinFua > 0 && (
+                <button
+                  onClick={handleGenerarTodosFuasPendientes}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer shadow-xs transition-all flex items-center gap-1.5"
+                  title="Generar FUA para todas las atenciones que no tengan uno emitido"
+                >
+                  <FileText size={14} />
+                  <span>⚡ Generar FUAs Pendientes ({kpisAtendidos.sinFua})</span>
+                </button>
+              )}
+              <button
+                onClick={() => setCurrentTab('fua')}
+                className="px-3.5 py-2 bg-[#1A2B4A] hover:bg-[#243b5e] text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer shadow-xs transition-all"
+              >
+                Configurar Lote / Rango FUA
+              </button>
+            </div>
           </div>
 
           {/* CONTROLES Y BUSCADOR */}
@@ -690,8 +832,8 @@ export const AtencionView: React.FC = () => {
                     </tr>
                   ) : (
                     atencionesFiltradas.map((atn) => {
-                      const pac = pacientes.find((p) => p.id === atn.paciente_id);
-                      const prof = profesionales.find((pr) => pr.id === atn.profesional_id);
+                      const pac = pacientes.find((p) => String(p.id) === String(atn.paciente_id));
+                      const prof = profesionales.find((pr) => String(pr.id) === String(atn.profesional_id));
                       const fua = getFuaForAtencion(atn);
 
                       return (

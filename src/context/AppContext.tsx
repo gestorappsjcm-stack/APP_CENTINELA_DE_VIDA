@@ -78,6 +78,7 @@ interface AppContextType {
   addCita: (cita: Omit<Cita, 'id'>) => { success: boolean; error?: string };
   confirmarCita: (id: string) => void;
   cancelarCita: (id: string, motivo?: string) => void;
+  llamarTurno: (citaId: string, consultorioId?: string) => void;
 
   // Triajes
   triajes: Triaje[];
@@ -449,10 +450,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const now = new Date();
     const fecha = now.toISOString().split('T')[0];
     const hora = now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-    const correlativoNum = (fuaConfig.ultimo_numero || fuas.length) + 1;
+    const correlativoNum = ((fuaConfig?.ultimo_numero ?? fuas.length) || 0) + 1;
     const correlativo = String(correlativoNum).padStart(8, '0');
-    const anio = fuaConfig.anio || now.getFullYear();
-    const renaiess = fuaConfig.codigo_renipress || '00003414';
+    const anio = fuaConfig?.anio || now.getFullYear();
+    const renaiess = fuaConfig?.codigo_renipress || '00003414';
     const numero_fua = `${renaiess}-${anio}-${correlativo}`;
     const fuaId = `fua-${Date.now()}`;
 
@@ -470,22 +471,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setFuas((prev) => [newFUA, ...prev]);
 
-    // Actualizar último número
+    // Actualizar último número en configuración local
     setFuaConfig((prev) => {
       const updated = { ...prev, ultimo_numero: correlativoNum };
       localStorage.setItem(`${LOCAL_STORAGE_KEY}_fua_config`, JSON.stringify(updated));
       return updated;
     });
 
-    // Si viene vinculado a una atención, marcar la atención
+    // Si viene vinculado a una atención, marcar la atención tanto en memoria como persistencia
     if (data.atencion_id) {
       setAtenciones((prev) =>
-        prev.map((a) => (a.id === data.atencion_id ? { ...a, fua_generado: true, fua_id: fuaId } : a))
+        prev.map((a) =>
+          String(a.id) === String(data.atencion_id)
+            ? { ...a, fua_generado: true, fua_id: fuaId }
+            : a
+        )
       );
     }
 
+    // Persistir en Supabase en segundo plano si está disponible
     if (isSupabaseConfigured()) {
-      supabaseService.insertFua(newFUA).catch((e) => console.warn('Supabase insertFua error:', e));
+      supabaseService.insertFua(newFUA)
+        .then((ok) => {
+          if (ok && data.atencion_id) {
+            supabaseService.updateAtencionFua(String(data.atencion_id), fuaId).catch(() => {});
+          }
+        })
+        .catch((e) => console.warn('Supabase insertFua error:', e));
     }
     return { success: true, fuaId, numeroFua: numero_fua };
   };
@@ -625,6 +637,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isSupabaseConfigured()) {
       supabaseService.updateCita(id, { estado: 'CANCELADA', observaciones: motivo }).catch((e) => console.warn('Supabase cancelarCita error:', e));
     }
+  };
+
+  const llamarTurno = (citaId: string, consultorioId?: string) => {
+    setCitas((prev) =>
+      prev.map((c) =>
+        c.id === citaId
+          ? {
+              ...c,
+              llamado_pantalla: true,
+              consultorio_id: consultorioId || c.consultorio_id,
+            }
+          : c
+      )
+    );
   };
 
   // TRIAJES
@@ -864,6 +890,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCita,
         confirmarCita,
         cancelarCita,
+        llamarTurno,
         triajes,
         addTriaje,
         llamarPaciente,

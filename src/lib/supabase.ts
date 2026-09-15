@@ -1,18 +1,48 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Variables de entorno cliente Vite
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const STORAGE_URL_KEY = 'centinela_supabase_url';
+const STORAGE_KEY_KEY = 'centinela_supabase_anon_key';
+
+export const getStoredCredentials = (): { url: string; key: string } => {
+  let url = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+  let key = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+  if (typeof window !== 'undefined') {
+    const localUrl = localStorage.getItem(STORAGE_URL_KEY);
+    const localKey = localStorage.getItem(STORAGE_KEY_KEY);
+    if (!url && localUrl) url = localUrl.trim();
+    if (!key && localKey) key = localKey.trim();
+  }
+
+  return { url, key };
+};
+
+export const saveSupabaseCredentials = (url: string, key: string) => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(STORAGE_URL_KEY, url.trim());
+    localStorage.setItem(STORAGE_KEY_KEY, key.trim());
+  }
+  supabaseInstance = null; // Reiniciar instancia
+};
+
+export const clearSupabaseCredentials = () => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(STORAGE_URL_KEY);
+    localStorage.removeItem(STORAGE_KEY_KEY);
+  }
+  supabaseInstance = null;
+};
 
 let supabaseInstance: SupabaseClient | null = null;
 
 export const isSupabaseConfigured = (): boolean => {
+  const { url, key } = getStoredCredentials();
   return Boolean(
-    supabaseUrl &&
-    supabaseAnonKey &&
-    supabaseUrl.trim().length > 0 &&
-    supabaseAnonKey.trim().length > 0 &&
-    supabaseUrl.startsWith('http')
+    url &&
+    key &&
+    url.length > 0 &&
+    key.length > 0 &&
+    url.startsWith('http')
   );
 };
 
@@ -21,8 +51,9 @@ export const getSupabase = (): SupabaseClient | null => {
     return null;
   }
   if (!supabaseInstance) {
+    const { url, key } = getStoredCredentials();
     try {
-      supabaseInstance = createClient(supabaseUrl.trim(), supabaseAnonKey.trim(), {
+      supabaseInstance = createClient(url, key, {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
@@ -36,8 +67,15 @@ export const getSupabase = (): SupabaseClient | null => {
   return supabaseInstance;
 };
 
+export const getSupabaseUrlDisplay = (): string => {
+  const { url } = getStoredCredentials();
+  return url ? url.replace(/^(https?:\/\/[^/]+).*/, '$1') : '';
+};
+
 export const SUPABASE_METADATA = {
-  url: supabaseUrl ? supabaseUrl.replace(/^(https?:\/\/[^/]+).*/, '$1') : '',
+  get url() {
+    return getSupabaseUrlDisplay();
+  },
   tables: [
     'cv_pacientes',
     'cv_citas',

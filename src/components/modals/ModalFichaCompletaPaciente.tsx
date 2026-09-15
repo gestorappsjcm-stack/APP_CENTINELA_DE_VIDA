@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { Paciente } from '../../types';
+import { parseMedicamentosList } from '../../lib/medicamentosHelper';
 import {
   X,
   User,
@@ -548,31 +549,35 @@ export const ModalFichaCompletaPaciente: React.FC<ModalFichaCompletaPacienteProp
                       )}
 
                       {/* Medicamentos Prescritos */}
-                      {atn.medicamentos && atn.medicamentos.length > 0 && (
-                        <div className="p-2.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700/70">
-                          <span className="font-bold text-slate-700 dark:text-slate-300 text-[11px] flex items-center gap-1 mb-1.5">
-                            <Pill size={13} className="text-teal-600" />
-                            Receta Médica / Prescripciones ({atn.medicamentos.length}):
-                          </span>
-                          <div className="space-y-1">
-                            {atn.medicamentos.map((med, idx) => (
-                              <div
-                                key={idx}
-                                className="text-[11px] flex flex-wrap items-center justify-between bg-white dark:bg-slate-800 p-1.5 rounded border border-slate-100 dark:border-slate-700 gap-2"
-                              >
-                                <span className="font-bold text-slate-800 dark:text-slate-200">
-                                  {med.nombre || med.medicamento}
-                                </span>
-                                <span className="text-slate-500">
-                                  Dosis: <span className="font-semibold text-slate-700 dark:text-slate-300">{med.dosis}</span> cada{' '}
-                                  <span className="font-semibold text-slate-700 dark:text-slate-300">{med.frecuencia}</span> por{' '}
-                                  <span className="font-semibold text-slate-700 dark:text-slate-300">{med.duracion}</span>
-                                </span>
-                              </div>
-                            ))}
+                      {(() => {
+                        const medsList = parseMedicamentosList(atn.medicamentos);
+                        if (medsList.length === 0) return null;
+                        return (
+                          <div className="p-2.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700/70">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 text-[11px] flex items-center gap-1 mb-1.5">
+                              <Pill size={13} className="text-teal-600" />
+                              Receta Médica / Prescripciones ({medsList.length}):
+                            </span>
+                            <div className="space-y-1">
+                              {medsList.map((med, idx) => (
+                                <div
+                                  key={med.id || idx}
+                                  className="text-[11px] flex flex-wrap items-center justify-between bg-white dark:bg-slate-800 p-1.5 rounded border border-slate-100 dark:border-slate-700 gap-2"
+                                >
+                                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                                    {med.medicamento || med.nombre} {med.concentracion ? `(${med.concentracion})` : ''}
+                                  </span>
+                                  <span className="text-slate-500">
+                                    {med.dosis ? `Dosis: ${med.dosis}` : ''}{' '}
+                                    {med.frecuencia ? `cada ${med.frecuencia}` : ''}{' '}
+                                    {med.duracion ? `por ${med.duracion}` : ''}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   );
                 })}

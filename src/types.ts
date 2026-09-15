@@ -156,9 +156,9 @@ export interface MedicamentoPrescrito {
   medicamento?: string;
   concentracion?: string;
   presentacion?: string;
-  dosis: string;
-  frecuencia: string;
-  duracion: string;
+  dosis?: string;
+  frecuencia?: string;
+  duracion?: string;
   cantidad?: number;
   indicaciones?: string;
 }
@@ -273,7 +273,9 @@ export interface FuaConfig {
 export interface FUA {
   id: string;
   numero_fua: string;
+  numero_fua_formateado?: string;
   fecha: string;
+  fecha_atencion?: string;
   hora: string;
   paciente_id: string;
   codigo_renaes: string;

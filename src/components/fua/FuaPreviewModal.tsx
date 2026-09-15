@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FUA, Paciente, Profesional } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { Printer, ArrowLeft, Eye } from 'lucide-react';
+import { parseMedicamentosList } from '../../lib/medicamentosHelper';
 
 interface FuaPreviewModalProps {
   fua: FUA;
@@ -12,35 +13,85 @@ export const FuaPreviewModal: React.FC<FuaPreviewModalProps> = ({ fua, onClose }
   const { pacientes, profesionales, triajes } = useApp();
   const [caraActiva, setCaraActiva] = useState<'anverso' | 'reverso'>('anverso');
 
-  const paciente = pacientes.find((p) => p.id === fua.paciente_id);
-  const profesional = profesionales.find((pr) => pr.id === fua.profesional_id);
-  const triaje = fua.triaje_id ? triajes.find((t) => t.id === fua.triaje_id) : triajes.find((t) => t.paciente_id === fua.paciente_id);
+  const paciente = pacientes.find((p) => String(p.id) === String(fua.paciente_id));
+  const profesional =
+    profesionales.find((pr) => String(pr.id) === String(fua.profesional_id)) ||
+    profesionales[0];
+  const triaje = fua.triaje_id
+    ? triajes.find((t) => String(t.id) === String(fua.triaje_id))
+    : triajes.find((t) => String(t.paciente_id) === String(fua.paciente_id));
 
   // Descomponer número FUA
-  const partesFua = fua.numero_fua ? fua.numero_fua.split('-') : [];
-  const renaiess = fua.renaiess || partesFua[0] || '00003414';
-  const anioFua = fua.anio_fua || partesFua[1] || '2026';
+  const partesFua = fua.numero_fua ? String(fua.numero_fua).split('-') : [];
+  const renaiess = fua.renaiess || fua.codigo_renaes || partesFua[0] || '00003414';
+  const anioFua = fua.anio_fua ? String(fua.anio_fua) : (partesFua[1] || '2026');
   const correlativo = fua.correlativo || partesFua[2] || '00000001';
 
   // Fecha de atención
-  const fechaAtencion = fua.fecha || new Date().toISOString().split('T')[0];
-  const [anioAtn, mesAtn, diaAtn] = fechaAtencion.split('-');
+  const rawFechaAtn = String(fua.fecha || new Date().toISOString().split('T')[0]).split(' ')[0].split('T')[0];
+  let anioAtn = '2026', mesAtn = '09', diaAtn = '10';
+  if (rawFechaAtn.includes('-')) {
+    const p = rawFechaAtn.split('-');
+    anioAtn = p[0] || '2026';
+    mesAtn = p[1] || '01';
+    diaAtn = p[2] || '01';
+  } else if (rawFechaAtn.includes('/')) {
+    const p = rawFechaAtn.split('/');
+    if (p[0].length === 4) {
+      anioAtn = p[0];
+      mesAtn = p[1] || '01';
+      diaAtn = p[2] || '01';
+    } else {
+      diaAtn = p[0] || '01';
+      mesAtn = p[1] || '01';
+      anioAtn = p[2] || '2026';
+    }
+  }
 
   // Fecha de nacimiento del paciente
   let diaNac = '', mesNac = '', anioNac = '';
   if (paciente?.fecha_nacimiento) {
-    const [y, m, d] = paciente.fecha_nacimiento.split('-');
-    diaNac = d || '';
-    mesNac = m || '';
-    anioNac = y || '';
+    const rawFn = String(paciente.fecha_nacimiento).split(' ')[0].split('T')[0];
+    if (rawFn.includes('-')) {
+      const p = rawFn.split('-');
+      anioNac = p[0] || '';
+      mesNac = p[1] || '';
+      diaNac = p[2] || '';
+    } else if (rawFn.includes('/')) {
+      const p = rawFn.split('/');
+      if (p[0].length === 4) {
+        anioNac = p[0] || '';
+        mesNac = p[1] || '';
+        diaNac = p[2] || '';
+      } else {
+        diaNac = p[0] || '';
+        mesNac = p[1] || '';
+        anioNac = p[2] || '';
+      }
+    }
   }
 
   const sexo = (paciente?.sexo || 'M').toUpperCase();
   const esMasculino = sexo === 'M' || sexo === 'MASCULINO';
   const esFemenino = sexo === 'F' || sexo === 'FEMENINO';
 
-  // Diagnósticos (hasta 10)
-  const diags = fua.diagnosticos || [];
+  // Diagnósticos seguros (hasta 10)
+  const rawDiags = Array.isArray(fua.diagnosticos) ? fua.diagnosticos : [];
+  const diags = rawDiags.map((d: any) => {
+    if (typeof d === 'string') {
+      const parts = (d as string).split(':');
+      return {
+        codigo: parts[0]?.trim() || 'F32.9',
+        descripcion: parts[1]?.trim() || d,
+        tipo: 'D',
+        tipo_ingreso: 'D',
+        cie_ingreso: parts[0]?.trim() || 'F32.9',
+        tipo_egreso: 'D',
+        cie_egreso: parts[0]?.trim() || 'F32.9',
+      };
+    }
+    return d || { codigo: 'F32.9', descripcion: 'DIAGNÓSTICO', tipo: 'D' };
+  });
   const nDiags = diags.length;
 
   // Clase de escala del anverso según cantidad de diagnósticos (z1 a z5)
@@ -51,11 +102,14 @@ export const FuaPreviewModal: React.FC<FuaPreviewModalProps> = ({ fua, onClose }
   else if (nDiags <= 8) zoomClass = 'z4';
   else zoomClass = 'z5';
 
-  // Medicamentos (hasta 10)
-  const medicamentos = fua.medicamentos || [];
+  // Medicamentos (hasta 10) - normalizado seguro
+  const medicamentos = Array.isArray(fua.medicamentos)
+    ? fua.medicamentos
+    : parseMedicamentosList(fua.medicamentos);
 
   // Procedimientos (hasta 8)
-  const procedimientos = fua.procedimientos || [
+  const rawProcs = Array.isArray(fua.procedimientos) ? fua.procedimientos : [];
+  const procedimientos = rawProcs.length > 0 ? rawProcs : [
     { cpms: '90806', descripcion: 'PSICOTERAPIA INDIVIDUAL', ind: '1', eje: '1', dx: '1', res: 'COMPLETO' },
     { cpms: '96101', descripcion: 'EVALUACIÓN PSICOLÓGICA', ind: '1', eje: '1', dx: '1', res: 'INFORME' },
   ];

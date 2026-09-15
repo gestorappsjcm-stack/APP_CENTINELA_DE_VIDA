@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Database,
@@ -7,13 +7,20 @@ import {
   RefreshCw,
   X,
   ExternalLink,
-  Layers,
   Table,
   Eye,
   ShieldCheck,
   Server,
+  Key,
+  Globe,
+  Trash2,
 } from 'lucide-react';
-import { SUPABASE_METADATA } from '../../lib/supabase';
+import {
+  SUPABASE_METADATA,
+  getStoredCredentials,
+  saveSupabaseCredentials,
+  clearSupabaseCredentials,
+} from '../../lib/supabase';
 
 export const ModalSupabaseStatus: React.FC = () => {
   const {
@@ -26,7 +33,45 @@ export const ModalSupabaseStatus: React.FC = () => {
     isSyncing,
   } = useApp();
 
+  const [inputUrl, setInputUrl] = useState('');
+  const [inputKey, setInputKey] = useState('');
+  const [showConfigInputs, setShowConfigInputs] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeModal === 'supabaseStatus') {
+      const creds = getStoredCredentials();
+      setInputUrl(creds.url);
+      setInputKey(creds.key);
+      if (!creds.url || !creds.key) {
+        setShowConfigInputs(true);
+      }
+    }
+  }, [activeModal]);
+
   if (activeModal !== 'supabaseStatus') return null;
+
+  const handleSaveAndConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputUrl.trim() || !inputKey.trim()) {
+      alert('Por favor complete la URL y el Anon Key de Supabase.');
+      return;
+    }
+    saveSupabaseCredentials(inputUrl.trim(), inputKey.trim());
+    setSaveSuccessMsg('Credenciales guardadas. Verificando conexión...');
+    await syncWithSupabase();
+    setTimeout(() => setSaveSuccessMsg(null), 4000);
+  };
+
+  const handleClearCredentials = async () => {
+    if (confirm('¿Desea limpiar las credenciales locales de Supabase?')) {
+      clearSupabaseCredentials();
+      setInputUrl('');
+      setInputKey('');
+      setShowConfigInputs(true);
+      await syncWithSupabase();
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -80,7 +125,7 @@ export const ModalSupabaseStatus: React.FC = () => {
                   ? 'Conexión activa con Supabase'
                   : supabaseStatus === 'connecting'
                   ? 'Verificando enlace con Supabase...'
-                  : 'Modo Local / Esperando Credenciales de Supabase'}
+                  : 'Esperando Credenciales o Reconexión con Supabase'}
               </div>
               <p className="text-xs leading-relaxed opacity-90">{supabaseMessage}</p>
               {SUPABASE_METADATA.url && (
@@ -91,15 +136,107 @@ export const ModalSupabaseStatus: React.FC = () => {
             </div>
           </div>
 
+          {saveSuccessMsg && (
+            <div className="p-3 rounded-lg bg-teal-50 dark:bg-teal-950/50 border border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-200 text-xs font-semibold flex items-center gap-2">
+              <CheckCircle2 size={16} className="text-teal-600" />
+              <span>{saveSuccessMsg}</span>
+            </div>
+          )}
+
+          {/* Formulario de Credenciales de Supabase */}
+          <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Key size={14} className="text-teal-600" />
+                Credenciales de Supabase (URL y Anon Key)
+              </h4>
+              <button
+                type="button"
+                onClick={() => setShowConfigInputs(!showConfigInputs)}
+                className="text-[11px] font-semibold text-teal-600 hover:text-teal-700 dark:text-teal-400 cursor-pointer"
+              >
+                {showConfigInputs ? 'Ocultar campos' : 'Editar / Reconfigurar'}
+              </button>
+            </div>
+
+            {showConfigInputs ? (
+              <form onSubmit={handleSaveAndConnect} className="space-y-3 pt-1">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">
+                    Supabase Project URL:
+                  </label>
+                  <div className="relative">
+                    <Globe size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="url"
+                      placeholder="https://tu-proyecto.supabase.co"
+                      value={inputUrl}
+                      onChange={(e) => setInputUrl(e.target.value)}
+                      required
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">
+                    Supabase Anon Public API Key:
+                  </label>
+                  <div className="relative">
+                    <Key size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="password"
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                      value={inputKey}
+                      onChange={(e) => setInputKey(e.target.value)}
+                      required
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="submit"
+                    disabled={isSyncing}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 transition-all"
+                  >
+                    <RefreshCw size={13} className={isSyncing ? 'animate-spin' : ''} />
+                    <span>Guardar y Conectar a Supabase</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleClearCredentials}
+                    className="px-3 py-2 bg-slate-200 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-slate-700 hover:text-rose-700 dark:text-slate-300 dark:hover:text-rose-300 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Trash2 size={13} />
+                    <span>Limpiar</span>
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <p className="text-[11px] text-slate-500">
+                {inputUrl ? (
+                  <>
+                    Configurado para el servidor <code className="font-mono text-teal-700 dark:text-teal-300">{inputUrl}</code>
+                  </>
+                ) : (
+                  'No hay credenciales registradas todavía. Haga clic en "Editar / Reconfigurar" para ingresarlas.'
+                )}
+              </p>
+            )}
+          </div>
+
           {/* Sincronización Manual */}
           <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
             <div>
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                 <Server size={14} className="text-teal-600" />
-                Sincronización Bidireccional
+                Sincronización Bidireccional en Vivo
               </h4>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Lee y sincroniza pacientes, citas, atenciones, triajes y FUAs en vivo.
+                Lee y sincroniza pacientes, citas, atenciones, triajes y FUAs en tiempo real.
               </p>
             </div>
             <button
@@ -154,30 +291,6 @@ export const ModalSupabaseStatus: React.FC = () => {
               ))}
             </div>
           </div>
-
-          {/* Guía de Configuración si no está conectado */}
-          {!isSupabaseConfigured && (
-            <div className="p-4 bg-slate-100 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-              <h5 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <ShieldCheck size={14} className="text-teal-600" />
-                Cómo vincular tus credenciales de Supabase
-              </h5>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                En el menú de <strong>Settings / Secrets</strong> de AI Studio, agrega las siguientes dos variables de entorno con los datos de tu proyecto de Supabase:
-              </p>
-              <div className="space-y-1 font-mono text-[11px] bg-white dark:bg-slate-950 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
-                <div className="text-teal-600 dark:text-teal-400">
-                  VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
-                </div>
-                <div className="text-indigo-600 dark:text-indigo-400">
-                  VITE_SUPABASE_ANON_KEY=eyJhbGciOi...
-                </div>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                La aplicación detectará automáticamente tus tablas <code className="text-slate-700 dark:text-slate-300">cv_*</code> y vistas <code className="text-slate-700 dark:text-slate-300">v_cv_*</code> mostradas en tu base de datos de Supabase.
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Footer */}
