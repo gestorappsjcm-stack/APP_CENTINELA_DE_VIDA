@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { FUA, Paciente, AtencionClinica } from '../../types';
 import { FuaPreviewModal } from '../fua/FuaPreviewModal';
@@ -49,17 +49,17 @@ export const FuaView: React.FC = () => {
   const [fuaRecienGenerado, setFuaRecienGenerado] = useState<FUA | null>(null);
   const [mensajeAlerta, setMensajeAlerta] = useState<string | null>(null);
 
-  // Estados de configuración de rango
+  // Estados de configuraciÃ³n de rango
   const [mostrarConfig, setMostrarConfig] = useState(false);
   const [cfgRenipress, setCfgRenipress] = useState(fuaConfig?.codigo_renipress || '00003414');
   const [cfgAnio, setCfgAnio] = useState(fuaConfig?.anio || 2026);
   const [cfgRangoMax, setCfgRangoMax] = useState(fuaConfig?.rango_maximo || 100);
   const [cfgNombreIpress, setCfgNombreIpress] = useState(
-    fuaConfig?.nombre_ipress || 'HOSPITAL SAN JOSÉ DE CHINCHA'
+    fuaConfig?.nombre_ipress || 'HOSPITAL SAN JOSÃ‰ DE CHINCHA'
   );
   const [configGuardadaMsg, setConfigGuardadaMsg] = useState(false);
 
-  // Paginación de Historial
+  // PaginaciÃ³n de Historial
   const [paginaActual, setPaginaActual] = useState(1);
   const itemsPorPagina = 10;
 
@@ -78,7 +78,7 @@ export const FuaView: React.FC = () => {
     return { total, esteMes, disponibles, porcentajeUtilizado, rangoMaximo };
   }, [fuas, fuaConfig]);
 
-  // Búsqueda de pacientes reactiva
+  // BÃºsqueda de pacientes reactiva
   const pacientesFiltrados = useMemo(() => {
     const q = searchPacienteText.trim().toLowerCase();
     if (!q || q.length < 2) return [];
@@ -98,13 +98,13 @@ export const FuaView: React.FC = () => {
     return atenciones.filter((a) => a.paciente_id === selectedPaciente.id);
   }, [atenciones, selectedPaciente]);
 
-  // Selección de paciente
+  // SelecciÃ³n de paciente
   const handleSelectPaciente = (pac: Paciente) => {
     // Validar estado SIS
     const seguro = (pac.seguro || '').toUpperCase();
     if (seguro && seguro !== 'SIS' && seguro !== 'SUBSIDIADO' && seguro !== 'SEMISUBSIDIADO') {
       setMensajeAlerta(
-        `Atención: El paciente ${pac.apellidos_nombres} registra seguro "${pac.seguro}". El Formato Único de Atención (FUA) corresponde prioritariamente a asegurados del SIS.`
+        `AtenciÃ³n: El paciente ${pac.apellidos_nombres} registra seguro "${pac.seguro}". El Formato Ãšnico de AtenciÃ³n (FUA) corresponde prioritariamente a asegurados del SIS.`
       );
     } else {
       setMensajeAlerta(null);
@@ -116,7 +116,7 @@ export const FuaView: React.FC = () => {
     setFuaRecienGenerado(null);
   };
 
-  // Guardar Configuración
+  // Guardar ConfiguraciÃ³n
   const handleGuardarConfig = (e: React.FormEvent) => {
     e.preventDefault();
     updateFuaConfig({
@@ -137,14 +137,14 @@ export const FuaView: React.FC = () => {
     }
 
     if (!selectedAtencion) {
-      alert('Debe seleccionar la atención clínica para generar el FUA.');
+      alert('Debe seleccionar la atenciÃ³n clÃ­nica para generar el FUA.');
       return;
     }
 
     const profesional = profesionales.find((pr) => pr.id === selectedAtencion.profesional_id) || profesionales[0];
     const triaje = triajes.find((t) => t.id === selectedAtencion.triaje_id) || triajes.find((t) => t.paciente_id === selectedPaciente.id);
 
-    // Diagnósticos de la atención
+    // DiagnÃ³sticos de la atenciÃ³n
     const diagnosticos: FUA['diagnosticos'] = [];
     if (selectedAtencion.diagnostico_1) {
       diagnosticos.push({
@@ -180,7 +180,7 @@ export const FuaView: React.FC = () => {
       });
     }
 
-    // Si la atención no tenía diagnósticos definidos, asignar diagnóstico predeterminado de salud mental
+    // Si la atenciÃ³n no tenÃ­a diagnÃ³sticos definidos, asignar diagnÃ³stico predeterminado de salud mental
     if (diagnosticos.length === 0) {
       diagnosticos.push({
         codigo: 'F32.1',
@@ -193,7 +193,7 @@ export const FuaView: React.FC = () => {
       });
     }
 
-    // Medicamentos de la atención
+    // Medicamentos de la atenciÃ³n
     const medicamentos: FUA['medicamentos'] = [];
     if (selectedAtencion.medicamentos && selectedAtencion.medicamentos.length > 0) {
       selectedAtencion.medicamentos.forEach((m, idx) => {
@@ -214,7 +214,7 @@ export const FuaView: React.FC = () => {
         codigo_sismed: '02891',
         descripcion: 'SERTRALINA 50 MG TABLETA',
         cantidad: 30,
-        indicacion: '1 tableta vía oral cada 24 horas por las mañanas',
+        indicacion: '1 tableta vÃ­a oral cada 24 horas por las maÃ±anas',
         forma_farmaceutica: 'TAB',
         concentracion: '50mg',
         cantidad_prescrita: 30,
@@ -223,7 +223,7 @@ export const FuaView: React.FC = () => {
       });
     }
 
-    // Código prestacional (056: Consulta médica especializada / Salud Mental)
+    // CÃ³digo prestacional (056: Consulta mÃ©dica especializada / Salud Mental)
     const codigoPrestacional: FUA['codigo_prestacional'] = '056';
 
     const pesoVal = selectedAtencion.peso ? parseFloat(selectedAtencion.peso) : (triaje?.peso ? Number(triaje.peso) : 65);
@@ -233,7 +233,7 @@ export const FuaView: React.FC = () => {
       paciente_id: selectedPaciente.id,
       codigo_renaes: fuaConfig?.codigo_renipress || '00003414',
       diresa: 'DIRESA ICA / RED CHINCHA',
-      establecimiento: fuaConfig?.nombre_ipress || 'HOSPITAL SAN JOSÉ DE CHINCHA',
+      establecimiento: fuaConfig?.nombre_ipress || 'HOSPITAL SAN JOSÃ‰ DE CHINCHA',
       componente_sis: 'SUBSIDIADO',
       codigo_afiliacion_sis: `150-1-${selectedPaciente.numero_documento || selectedPaciente.codigo_temporal || '00000000'}`,
       tipo_atencion: 'AMBULATORIA',
@@ -251,9 +251,9 @@ export const FuaView: React.FC = () => {
       medicamentos,
       procedimientos: [
         { cpms: '90806', descripcion: 'PSICOTERAPIA INDIVIDUAL', ind: '1', eje: '1', dx: '1', res: 'COMPLETO' },
-        { cpms: '96101', descripcion: 'EVALUACIÓN PSICOLÓGICA INTEGRAL', ind: '1', eje: '1', dx: '1', res: 'INFORME' },
+        { cpms: '96101', descripcion: 'EVALUACIÃ“N PSICOLÃ“GICA INTEGRAL', ind: '1', eje: '1', dx: '1', res: 'INFORME' },
       ],
-      observaciones: `Atención clínica ambulatoria vinculada a Historia Clínica ${selectedPaciente.hcl || 'S/N'}. Control programado.`,
+      observaciones: `AtenciÃ³n clÃ­nica ambulatoria vinculada a Historia ClÃ­nica ${selectedPaciente.hcl || 'S/N'}. Control programado.`,
       personal_atiende: 'IPRESS',
       lugar_atencion: 'INTRAMURAL',
       atencion_directa: true,
@@ -296,7 +296,7 @@ export const FuaView: React.FC = () => {
     });
   }, [fuas, pacientes, searchTermFua]);
 
-  // Paginación
+  // PaginaciÃ³n
   const totalPaginas = Math.ceil(historialFiltrado.length / itemsPorPagina) || 1;
   const indexInicio = (paginaActual - 1) * itemsPorPagina;
   const fuasPaginados = historialFiltrado.slice(indexInicio, indexInicio + itemsPorPagina);
@@ -314,19 +314,19 @@ export const FuaView: React.FC = () => {
       const diags = (f.diagnosticos || []).map((d) => `${d.codigo}: ${d.descripcion}`).join(' | ');
 
       return {
-        'N°': idx + 1,
-        'N° FUA': f.numero_fua,
+        'NÂ°': idx + 1,
+        'NÂ° FUA': f.numero_fua,
         'FECHA': f.fecha,
         'HORA': f.hora,
         'IPRESS RENIPRESS': f.renaiess || f.codigo_renaes,
         'ESTABLECIMIENTO': f.establecimiento,
         'PACIENTE': pac?.apellidos_nombres || 'Desconocido',
         'TIPO DOC': pac?.tipo_documento || 'DNI',
-        'N° DOCUMENTO': pac?.numero_documento || pac?.codigo_temporal || '',
-        'HISTORIA CLÍNICA': pac?.hcl || '',
+        'NÂ° DOCUMENTO': pac?.numero_documento || pac?.codigo_temporal || '',
+        'HISTORIA CLÃNICA': pac?.hcl || '',
         'SEGURO': pac?.seguro || 'SIS',
-        'CÓD. PRESTACIONAL': f.codigo_prestacional,
-        'DIAGNÓSTICOS': diags,
+        'CÃ“D. PRESTACIONAL': f.codigo_prestacional,
+        'DIAGNÃ“STICOS': diags,
         'PROFESIONAL RESPONSABLE': prof?.apellidos_nombres || '',
         'COLEGIATURA': prof?.colegiatura || '',
         'ESTADO': f.estado,
@@ -342,7 +342,7 @@ export const FuaView: React.FC = () => {
   };
 
   const handleEliminarFua = (fuaId: string, numeroFua: string) => {
-    if (window.confirm(`¿Está seguro de eliminar el registro FUA N° ${numeroFua}?`)) {
+    if (window.confirm(`Â¿EstÃ¡ seguro de eliminar el registro FUA NÂ° ${numeroFua}?`)) {
       deleteFUA(fuaId);
       if (fuaRecienGenerado?.id === fuaId) {
         setFuaRecienGenerado(null);
@@ -366,10 +366,10 @@ export const FuaView: React.FC = () => {
           </button>
           <div>
             <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <span className="text-[#1A2B4A] dark:text-blue-400">📄 Gestión de FUA</span>
+              <span className="text-[#1A2B4A] dark:text-blue-400">ðŸ“„ GestiÃ³n de FUA</span>
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Formato Único de Atención SIS • Emisión, Duplex A4, Sincronización y Registro Oficial
+              Formato Ãšnico de AtenciÃ³n SIS â€¢ EmisiÃ³n, Duplex A4, SincronizaciÃ³n y Registro Oficial
             </p>
           </div>
         </div>
@@ -388,7 +388,7 @@ export const FuaView: React.FC = () => {
             className="flex items-center gap-2 px-4 py-2 bg-[#165a36] hover:bg-[#1a6e42] text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
           >
             <FileSpreadsheet size={16} />
-            <span>📊 Excel</span>
+            <span>ðŸ“Š Excel</span>
           </button>
         </div>
       </div>
@@ -454,12 +454,12 @@ export const FuaView: React.FC = () => {
           <div className="mt-3 text-3xl font-black text-amber-600 dark:text-amber-400">
             {kpis.porcentajeUtilizado}%
           </div>
-          <div className="mt-1 text-[11px] text-slate-500">Rango de numeración</div>
+          <div className="mt-1 text-[11px] text-slate-500">Rango de numeraciÃ³n</div>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* PANEL DE CONFIGURACIÓN DEL RANGO FUA */}
+      {/* PANEL DE CONFIGURACIÃ“N DEL RANGO FUA */}
       {/* ========================================================================= */}
       {mostrarConfig && (
         <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-blue-200 dark:border-blue-900 shadow-md animate-in fade-in slide-in-from-top-3">
@@ -467,7 +467,7 @@ export const FuaView: React.FC = () => {
             <div className="flex items-center gap-2">
               <Settings size={18} className="text-[#1A2B4A] dark:text-blue-400" />
               <h2 className="text-base font-black text-slate-900 dark:text-white">
-                Configuración del Rango FUA Institucional
+                ConfiguraciÃ³n del Rango FUA Institucional
               </h2>
             </div>
             {configGuardadaMsg && (
@@ -481,7 +481,7 @@ export const FuaView: React.FC = () => {
           <form onSubmit={handleGuardarConfig} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
-                Código RENIPRESS
+                CÃ³digo RENIPRESS
               </label>
               <input
                 type="text"
@@ -495,7 +495,7 @@ export const FuaView: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
-                Año
+                AÃ±o
               </label>
               <input
                 type="number"
@@ -508,7 +508,7 @@ export const FuaView: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
-                Rango Máximo Asignado
+                Rango MÃ¡ximo Asignado
               </label>
               <input
                 type="number"
@@ -521,7 +521,7 @@ export const FuaView: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
-                Último Número Correlativo
+                Ãšltimo NÃºmero Correlativo
               </label>
               <input
                 type="text"
@@ -540,7 +540,7 @@ export const FuaView: React.FC = () => {
                 value={cfgNombreIpress}
                 onChange={(e) => setCfgNombreIpress(e.target.value)}
                 className="w-full px-3 py-2 text-xs font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500"
-                placeholder="HOSPITAL SAN JOSÉ DE CHINCHA"
+                placeholder="HOSPITAL SAN JOSÃ‰ DE CHINCHA"
                 required
               />
             </div>
@@ -550,7 +550,7 @@ export const FuaView: React.FC = () => {
                 type="submit"
                 className="w-full py-2.5 px-4 bg-[#1e3a5f] hover:bg-[#284f80] text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
               >
-                💾 Guardar Configuración
+                ðŸ’¾ Guardar ConfiguraciÃ³n
               </button>
             </div>
           </form>
@@ -558,7 +558,7 @@ export const FuaView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* SECCIÓN GENERAR NUEVO FUA */}
+      {/* SECCIÃ“N GENERAR NUEVO FUA */}
       {/* ========================================================================= */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-blue-200 dark:border-blue-900/60 p-6 shadow-sm">
         <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-100 dark:border-slate-700">
@@ -571,7 +571,7 @@ export const FuaView: React.FC = () => {
                 Generar Nuevo FUA
               </h2>
               <p className="text-xs text-slate-500">
-                Seleccione un paciente atendido y vincule la atención clínica correspondiente
+                Seleccione un paciente atendido y vincule la atenciÃ³n clÃ­nica correspondiente
               </p>
             </div>
           </div>
@@ -586,7 +586,7 @@ export const FuaView: React.FC = () => {
           )}
         </div>
 
-        {/* SI SE ACABA DE GENERAR UN FUA CON ÉXITO */}
+        {/* SI SE ACABA DE GENERAR UN FUA CON Ã‰XITO */}
         {fuaRecienGenerado ? (
           <div className="space-y-4 animate-in fade-in zoom-in-95">
             <div className="p-5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex flex-col items-center justify-center text-center space-y-3">
@@ -595,17 +595,17 @@ export const FuaView: React.FC = () => {
               </div>
               <div>
                 <span className="text-xs font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
-                  Operación Exitosa
+                  OperaciÃ³n Exitosa
                 </span>
                 <h3 className="text-lg font-black text-emerald-900 dark:text-emerald-200">
-                  ✅ FUA GENERADO EXITOSAMENTE
+                  âœ… FUA GENERADO EXITOSAMENTE
                 </h3>
               </div>
 
-              {/* NÚMERO FUA DESTACADO EN ROJO GRANDE */}
+              {/* NÃšMERO FUA DESTACADO EN ROJO GRANDE */}
               <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border-2 border-dashed border-rose-500 dark:border-rose-600 shadow-sm max-w-md w-full my-2">
                 <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
-                  Número Oficial de Formato FUA
+                  NÃºmero Oficial de Formato FUA
                 </div>
                 <div className="text-2xl sm:text-3xl font-mono font-black text-rose-600 dark:text-rose-400 tracking-wider my-1">
                   {fuaRecienGenerado.numero_fua}
@@ -621,7 +621,7 @@ export const FuaView: React.FC = () => {
                   className="flex items-center gap-2 px-5 py-2.5 bg-[#1e3a5f] hover:bg-[#284f80] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer transition-all"
                 >
                   <Eye size={16} />
-                  <span>👁️ Previsualizar / Imprimir FUA (A4 Doble Cara)</span>
+                  <span>ðŸ‘ï¸ Previsualizar / Imprimir FUA (A4 Doble Cara)</span>
                 </button>
 
                 <button
@@ -629,7 +629,7 @@ export const FuaView: React.FC = () => {
                   className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-all border border-slate-300 dark:border-slate-600"
                 >
                   <PlusCircle size={15} />
-                  <span>📝 Generar Otro FUA</span>
+                  <span>ðŸ“ Generar Otro FUA</span>
                 </button>
               </div>
             </div>
@@ -640,7 +640,7 @@ export const FuaView: React.FC = () => {
             {!selectedPaciente ? (
               <div className="space-y-3">
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Buscar Paciente (por Apellidos, Nombres, DNI o Historia Clínica):
+                  Buscar Paciente (por Apellidos, Nombres, DNI o Historia ClÃ­nica):
                 </label>
                 <div className="relative max-w-xl">
                   <Search
@@ -651,7 +651,7 @@ export const FuaView: React.FC = () => {
                     type="text"
                     value={searchPacienteText}
                     onChange={(e) => setSearchPacienteText(e.target.value)}
-                    placeholder="Escriba el nombre, DNI o N° de Historia..."
+                    placeholder="Escriba el nombre, DNI o NÂ° de Historia..."
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -678,7 +678,7 @@ export const FuaView: React.FC = () => {
                                 {pac.apellidos_nombres}
                               </div>
                               <div className="text-[11px] text-slate-500 font-mono">
-                                {pac.tipo_documento}: {pac.numero_documento || pac.codigo_temporal || 'S/D'} • HCL: {pac.hcl || 'S/N'}
+                                {pac.tipo_documento}: {pac.numero_documento || pac.codigo_temporal || 'S/D'} â€¢ HCL: {pac.hcl || 'S/N'}
                               </div>
                             </div>
                           </div>
@@ -721,7 +721,7 @@ export const FuaView: React.FC = () => {
                         {selectedPaciente.apellidos_nombres}
                       </div>
                       <div className="text-xs text-slate-500 font-mono">
-                        {selectedPaciente.tipo_documento}: {selectedPaciente.numero_documento || selectedPaciente.codigo_temporal} • HCL: {selectedPaciente.hcl || 'S/N'} • Sexo: {selectedPaciente.sexo}
+                        {selectedPaciente.tipo_documento}: {selectedPaciente.numero_documento || selectedPaciente.codigo_temporal} â€¢ HCL: {selectedPaciente.hcl || 'S/N'} â€¢ Sexo: {selectedPaciente.sexo}
                       </div>
                     </div>
                   </div>
@@ -754,22 +754,22 @@ export const FuaView: React.FC = () => {
                 <div className="space-y-2.5">
                   <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                     <Activity size={15} className="text-blue-600" />
-                    <span>📋 Seleccione una Atención Clínica:</span>
+                    <span>ðŸ“‹ Seleccione una AtenciÃ³n ClÃ­nica:</span>
                   </div>
 
                   {atencionesDelPaciente.length === 0 ? (
                     <div className="p-5 bg-amber-50/70 dark:bg-slate-900 border border-amber-200 dark:border-amber-900/60 rounded-xl text-center space-y-2">
                       <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
-                        ⚠️ No se encontraron atenciones clínicas registradas para este paciente.
+                        âš ï¸ No se encontraron atenciones clÃ­nicas registradas para este paciente.
                       </p>
                       <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                        Para generar un FUA conforme a la normativa SIS, primero debe registrar una atención en el módulo de Atenciones Clínicas.
+                        Para generar un FUA conforme a la normativa SIS, primero debe registrar una atenciÃ³n en el mÃ³dulo de Atenciones ClÃ­nicas.
                       </p>
                       <button
                         onClick={() => setCurrentTab('atencion')}
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#1A2B4A] hover:bg-[#243b5e] text-white text-xs font-bold rounded-lg cursor-pointer"
                       >
-                        Ir al Módulo de Atenciones
+                        Ir al MÃ³dulo de Atenciones
                       </button>
                     </div>
                   ) : (
@@ -829,12 +829,12 @@ export const FuaView: React.FC = () => {
                   )}
                 </div>
 
-                {/* TARJETA DATOS DE ATENCIÓN SELECCIONADA */}
+                {/* TARJETA DATOS DE ATENCIÃ“N SELECCIONADA */}
                 {selectedAtencion && (
                   <div className="p-4 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-xl space-y-2">
                     <div className="text-xs font-bold text-blue-900 dark:text-blue-300 flex items-center gap-1.5">
                       <CheckCircle2 size={15} />
-                      <span>Datos de Atención Seleccionada:</span>
+                      <span>Datos de AtenciÃ³n Seleccionada:</span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                       <div>
@@ -844,7 +844,7 @@ export const FuaView: React.FC = () => {
                         </strong>
                       </div>
                       <div>
-                        <span className="text-slate-500">Diagnóstico CIE-10:</span>{' '}
+                        <span className="text-slate-500">DiagnÃ³stico CIE-10:</span>{' '}
                         <strong className="text-slate-900 dark:text-white">
                           {selectedAtencion.cie10_1}
                         </strong>
@@ -859,7 +859,7 @@ export const FuaView: React.FC = () => {
                   </div>
                 )}
 
-                {/* BOTONES DE ACCIÓN */}
+                {/* BOTONES DE ACCIÃ“N */}
                 <div className="flex items-center gap-3 pt-2">
                   <button
                     onClick={handleGenerarFUA}
@@ -871,7 +871,7 @@ export const FuaView: React.FC = () => {
                     }`}
                   >
                     <FileText size={16} />
-                    <span>📄 GENERAR FUA</span>
+                    <span>ðŸ“„ GENERAR FUA</span>
                   </button>
 
                   <button
@@ -888,7 +888,7 @@ export const FuaView: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* SECCIÓN HISTORIAL DE FUAS GENERADOS */}
+      {/* SECCIÃ“N HISTORIAL DE FUAS GENERADOS */}
       {/* ========================================================================= */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs p-6 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
@@ -913,7 +913,7 @@ export const FuaView: React.FC = () => {
                 setSearchTermFua(e.target.value);
                 setPaginaActual(1);
               }}
-              placeholder="Buscar por N° FUA o Paciente..."
+              placeholder="Buscar por NÂ° FUA o Paciente..."
               className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -924,10 +924,10 @@ export const FuaView: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-700 text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-900/50">
-                <th className="py-3 px-4">N° FUA</th>
+                <th className="py-3 px-4">NÂ° FUA</th>
                 <th className="py-3 px-4">Paciente</th>
                 <th className="py-3 px-4">Documento</th>
-                <th className="py-3 px-4">Fecha Generación</th>
+                <th className="py-3 px-4">Fecha GeneraciÃ³n</th>
                 <th className="py-3 px-4">Estado SIS</th>
                 <th className="py-3 px-4 text-center">Acciones</th>
               </tr>
@@ -936,7 +936,7 @@ export const FuaView: React.FC = () => {
               {fuasPaginados.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-slate-500">
-                    No se encontraron registros de FUA coincidentes con la búsqueda.
+                    No se encontraron registros de FUA coincidentes con la bÃºsqueda.
                   </td>
                 </tr>
               ) : (
@@ -948,7 +948,7 @@ export const FuaView: React.FC = () => {
                       key={f.id}
                       className="hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors"
                     >
-                      {/* NÚMERO FUA EN ROJO DESTACADO */}
+                      {/* NÃšMERO FUA EN ROJO DESTACADO */}
                       <td className="py-3 px-4 font-mono font-bold text-rose-600 dark:text-rose-400 tracking-wider">
                         {f.numero_fua}
                       </td>
@@ -1014,11 +1014,11 @@ export const FuaView: React.FC = () => {
           </table>
         </div>
 
-        {/* PAGINACIÓN */}
+        {/* PAGINACIÃ“N */}
         {totalPaginas > 1 && (
           <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-700 text-xs">
             <div className="text-slate-500">
-              Página <strong className="text-slate-800 dark:text-slate-200">{paginaActual}</strong> de{' '}
+              PÃ¡gina <strong className="text-slate-800 dark:text-slate-200">{paginaActual}</strong> de{' '}
               <strong className="text-slate-800 dark:text-slate-200">{totalPaginas}</strong>
             </div>
 
@@ -1069,3 +1069,4 @@ export const FuaView: React.FC = () => {
     </div>
   );
 };
+
