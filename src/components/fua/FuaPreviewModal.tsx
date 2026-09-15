@@ -190,8 +190,19 @@ export const FuaPreviewModal: React.FC<FuaPreviewModalProps> = ({ fua, onClose }
         >
           {/* ENCABEZADO */}
           <div className="encabezado">
-            <div className="caja-escudo">
-              <svg width="28" height="32" viewBox="0 0 100 120" className="inline-block">
+            <div className="caja-escudo" id="fua-caja-escudo">
+              <img
+                src="/img/escudo_peru.png"
+                alt="República del Perú - Escudo Nacional"
+                className="max-h-[36px] max-w-[46px] w-auto h-auto object-contain block mx-auto"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  target.style.display = 'none';
+                  const fallback = target.nextElementSibling as HTMLElement | null;
+                  if (fallback) fallback.style.display = 'inline-block';
+                }}
+              />
+              <svg width="28" height="32" viewBox="0 0 100 120" className="hidden">
                 <rect width="100" height="120" rx="10" fill="#dc2626" />
                 <rect x="25" width="50" height="120" fill="#ffffff" />
                 <circle cx="50" cy="60" r="22" fill="#eab308" stroke="#15803d" strokeWidth="3" />
@@ -1295,8 +1306,18 @@ export const FuaPreviewModal: React.FC<FuaPreviewModalProps> = ({ fua, onClose }
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 0 8px;
+          padding: 1px 6px;
           border-right: 1px solid #000;
+          min-width: 48px;
+        }
+
+        .caja-escudo img {
+          max-height: 36px;
+          max-width: 46px;
+          width: auto;
+          height: auto;
+          object-fit: contain;
+          display: block;
         }
 
         .caja-peru {
