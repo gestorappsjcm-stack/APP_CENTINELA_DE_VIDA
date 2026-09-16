@@ -196,7 +196,7 @@ Indicación: Presentarse 15 min antes con DNI físico y pasar primero por Triaje
               <div className="flex justify-between items-center">
                 <span className="text-slate-500 font-medium">Tipo de Seguro:</span>
                 <span className="font-bold text-teal-800">
-                  {paciente?.seguro || 'SIS GRATUITO'}
+                  {cita.seguro_cita || paciente?.seguro || 'SIS GRATUITO'}
                 </span>
               </div>
             </div>

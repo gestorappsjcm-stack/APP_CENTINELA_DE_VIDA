@@ -117,11 +117,12 @@ export interface Cita {
   consultorio_id?: string;
   fecha_cita: string;
   hora_cita: string;
-  tipo_cita: 'CONSULTA' | 'TRIAJE' | 'EMERGENCIA' | 'TELECONSULTA' | 'VISITA_DOMICILIARIA';
+  tipo_cita: 'CONSULTA' | 'EMERGENCIA' | 'TELECONSULTA' | 'VISITA_DOMICILIARIA' | 'TRIAJE';
   estado: EstadoCita;
   motivo_consulta?: string;
   observaciones?: string;
   numero_ticket?: string;
+  seguro_cita?: string;
   triaje_completado?: boolean;
   atencion_completada?: boolean;
   llamado_pantalla?: boolean;

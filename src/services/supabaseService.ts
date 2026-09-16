@@ -263,6 +263,8 @@ export const supabaseService = {
           estado: c.estado || 'PENDIENTE',
           motivo_consulta: c.motivo_consulta,
           observaciones: c.observaciones,
+          numero_ticket: c.numero_ticket || `TKT-${c.fecha_cita ? c.fecha_cita.split('-')[0] : '2026'}-${String(c.id).replace(/\D/g, '').slice(-4).padStart(4, '0') || '0001'}`,
+          seguro_cita: c.seguro_cita,
           triaje_completado: Boolean(c.triaje_completado),
           atencion_completada: Boolean(c.atencion_completada),
         }));

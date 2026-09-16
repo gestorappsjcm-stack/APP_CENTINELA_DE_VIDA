@@ -6,9 +6,11 @@ import {
   TipoDiagnostico,
   AtencionClinica,
   FUA,
+  Cita,
 } from '../../types';
 import { CIE10_COMUNES, MEDICAMENTOS_SALUD_MENTAL } from '../../data/mockData';
 import { FuaPreviewModal } from '../fua/FuaPreviewModal';
+import { TicketAtencionModal } from '../modals/TicketAtencionModal';
 import { parseMedicamentosList } from '../../lib/medicamentosHelper';
 import {
   Stethoscope,
@@ -32,6 +34,8 @@ import {
   HeartPulse,
   Pill,
   ExternalLink,
+  Ticket,
+  DoorOpen,
 } from 'lucide-react';
 
 export const AtencionView: React.FC = () => {
@@ -47,6 +51,7 @@ export const AtencionView: React.FC = () => {
     llamarTurno,
     addAtencion,
     addFUA,
+    cancelarCita,
     setCurrentTab,
   } = useApp();
 
@@ -63,46 +68,63 @@ export const AtencionView: React.FC = () => {
   const [atencionRecienGuardada, setAtencionRecienGuardada] = useState<AtencionClinica | null>(null);
   const [fuaSuccessToast, setFuaSuccessToast] = useState<{ numeroFua: string; paciente: string } | null>(null);
 
+  // Ticket modal
+  const [selectedCitaTicket, setSelectedCitaTicket] = useState<Cita | null>(null);
+  const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
+
+  // Modal Cancelar / Paciente Retirado en Consultorio
+  const [cancelingCitaId, setCancelingCitaId] = useState<string | null>(null);
+  const [motivoCancelacion, setMotivoCancelacion] = useState('Paciente se retiró del establecimiento sin ingresar a la consulta');
+
   // Estados de Filtro para Pacientes Atendidos
   const [searchTermAtendidos, setSearchTermAtendidos] = useState('');
   const [filtroEstadoFua, setFiltroEstadoFua] = useState<'TODOS' | 'CON_FUA' | 'SIN_FUA'>('TODOS');
   const [filtroConsultorio, setFiltroConsultorio] = useState<string>('TODOS');
 
-  // Formulario Clínico de Consulta
+  // Formulario Clínico de Consulta (Inicia en blanco para registrar lo encontrado)
   const [anamnesis, setAnamnesis] = useState('');
   const [examenMental, setExamenMental] = useState({
-    apariencia: 'Consciente, orientado en tiempo y espacio, aseo adecuado.',
-    afecto: 'Eutímico / Ansioso reactivo',
-    pensamiento: 'Lógico, coherente, sin ideas delirantes ni ideación suicida activa.',
-    sensopercepcion: 'Sin alucinaciones activas.',
+    apariencia: '',
+    afecto: '',
+    pensamiento: '',
+    sensopercepcion: '',
   });
 
-  // Diagnósticos
+  // Diagnósticos (Inicia en blanco)
   const [diagnosticos, setDiagnosticos] = useState<
     Array<{ codigo: string; descripcion: string; tipo: TipoDiagnostico }>
-  >([
-    {
-      codigo: 'F41.1',
-      descripcion: 'Trastorno de ansiedad generalizada',
-      tipo: 'DEFINITIVO',
-    },
-  ]);
+  >([]);
   const [cieSearch, setCieSearch] = useState('');
 
-  // Procedimientos CPMS
-  const [procedimientoCPMS, setProcedimientoCPMS] = useState('99203');
+  // Procedimientos CPMS (Inicia en blanco)
+  const [procedimientoCPMS, setProcedimientoCPMS] = useState('');
 
-  // Receta Médica
+  // Receta Médica (Inicia en blanco)
   const [recetas, setRecetas] = useState<MedicamentoReceta[]>([]);
-  const [nuevoMedNombre, setNuevoMedNombre] = useState(MEDICAMENTOS_SALUD_MENTAL[0]?.nombre || 'SERTRALINA');
-  const [nuevaDosis, setNuevaDosis] = useState('1 tableta');
-  const [nuevaFrecuencia, setNuevaFrecuencia] = useState('Cada 24 horas (mañanas)');
-  const [nuevaDuracion, setNuevaDuracion] = useState('30 días');
-  const [nuevaCantidad, setNuevaCantidad] = useState(30);
+  const [nuevoMedNombre, setNuevoMedNombre] = useState('');
+  const [nuevaDosis, setNuevaDosis] = useState('');
+  const [nuevaFrecuencia, setNuevaFrecuencia] = useState('');
+  const [nuevaDuracion, setNuevaDuracion] = useState('');
+  const [nuevaCantidad, setNuevaCantidad] = useState(0);
 
   // Próxima Cita
   const [proximaCita, setProximaCita] = useState('');
   const [destinoFinal, setDestinoFinal] = useState('CITA_CONTROL');
+
+  // Contadores de pacientes en espera por cada consultorio
+  const consultoriosConPendientes = useMemo(() => {
+    return consultorios.map((c) => {
+      const pendientes = citas.filter((cita) => {
+        const tr = triajes.find((t) => t.cita_id === cita.id);
+        const asignado = cita.consultorio_id === c.id || tr?.consultorio_id === c.id;
+        return asignado && cita.estado !== 'ATENDIDA' && cita.estado !== 'CANCELADA';
+      });
+      return {
+        ...c,
+        pendientesCount: pendientes.length,
+      };
+    });
+  }, [consultorios, citas, triajes]);
 
   // Pacientes en cola del consultorio seleccionado
   const consultorioActual = consultorios.find((c) => c.id === selectedConsultorioId);
@@ -140,6 +162,16 @@ export const AtencionView: React.FC = () => {
       return;
     }
 
+    // Validación SIS: Solo los pacientes que tienen SIS pueden generar FUAs
+    const segPac = (pac.seguro || '').toUpperCase();
+    const esSis = segPac.includes('SIS') || segPac === 'SUBSIDIADO' || segPac === 'SEMISUBSIDIADO';
+    if (!esSis) {
+      alert(
+        `No es posible generar FUA: El paciente ${pac.apellidos_nombres} está registrado con el seguro "${pac.seguro || 'PARTICULAR'}".\n\nPor normativa MINSA, el Formato Único de Atención (FUA) solo se genera para pacientes asegurados al SIS.`
+      );
+      return;
+    }
+
     const prof =
       profesionales.find((p) => String(p.id) === String(atn.profesional_id)) ||
       profesionales[0];
@@ -170,21 +202,25 @@ export const AtencionView: React.FC = () => {
         cie_egreso: atn.cie10_2 || 'F41.1',
       });
     }
-    if (diagnosticosFua.length === 0) {
+    if (atn.diagnostico_3) {
       diagnosticosFua.push({
-        codigo: 'F32.1',
-        descripcion: 'EPISODIO DEPRESIVO MODERADO',
+        codigo: atn.cie10_3 || 'Z73.0',
+        descripcion: atn.diagnostico_3,
         tipo: 'D',
         tipo_ingreso: 'D',
-        cie_ingreso: 'F32.1',
+        cie_ingreso: atn.cie10_3 || 'Z73.0',
         tipo_egreso: 'D',
-        cie_egreso: 'F32.1',
+        cie_egreso: atn.cie10_3 || 'Z73.0',
       });
+    }
+    if (diagnosticosFua.length === 0) {
+      alert('Esta atención no cuenta con diagnósticos registrados. Registre al menos un diagnóstico para emitir el FUA oficial.');
+      return;
     }
 
     const medicamentosFua: FUA['medicamentos'] = [];
     const medsList = parseMedicamentosList(atn.medicamentos);
-    if (medsList.length > 0) {
+    if (medsList && medsList.length > 0) {
       medsList.forEach((m, idx) => {
         medicamentosFua.push({
           codigo_sismed: `0289${idx + 1}`,
@@ -198,18 +234,6 @@ export const AtencionView: React.FC = () => {
           diagnostico_relacionado: '1',
         });
       });
-    } else {
-      medicamentosFua.push({
-        codigo_sismed: '02891',
-        descripcion: 'SERTRALINA 50 MG TABLETA',
-        cantidad: 30,
-        indicacion: '1 tableta vía oral cada 24 horas por las mañanas',
-        forma_farmaceutica: 'TAB',
-        concentracion: '50mg',
-        cantidad_prescrita: 30,
-        cantidad_entregada: 30,
-        diagnostico_relacionado: '1',
-      });
     }
 
     const pesoVal = atn.peso
@@ -222,6 +246,28 @@ export const AtencionView: React.FC = () => {
       : triaje?.talla
       ? Number(triaje.talla)
       : 165;
+
+    const procedimientosFua = atn.procedimientos
+      ? [
+          {
+            cpms: atn.procedimientos.includes('99203') ? '99203' : '90834',
+            descripcion: atn.procedimientos,
+            ind: '1',
+            eje: '1',
+            dx: '1',
+            res: 'COMPLETO',
+          },
+        ]
+      : [
+          {
+            cpms: '90834',
+            descripcion: 'PSICOTERAPIA INDIVIDUAL DE 45 A 50 MINUTOS',
+            ind: '1',
+            eje: '1',
+            dx: '1',
+            res: 'COMPLETO',
+          },
+        ];
 
     const fuaData: Omit<FUA, 'id' | 'numero_fua' | 'fecha' | 'hora' | 'estado'> = {
       paciente_id: pac.id,
@@ -245,16 +291,7 @@ export const AtencionView: React.FC = () => {
       imc: tallaVal > 0 ? Number((pesoVal / Math.pow(tallaVal / 100, 2)).toFixed(1)) : 23.8,
       diagnosticos: diagnosticosFua,
       medicamentos: medicamentosFua,
-      procedimientos: [
-        {
-          cpms: '90834',
-          descripcion: 'PSICOTERAPIA INDIVIDUAL DE 45 A 50 MINUTOS',
-          ind: '1',
-          eje: '1',
-          dx: '1',
-          res: 'COMPLETO',
-        },
-      ],
+      procedimientos: procedimientosFua,
       observaciones: `Atención clínica ambulatoria vinculada a Historia Clínica ${pac.hcl || 'S/N'}. Control programado.`,
       personal_atiende: 'IPRESS',
       lugar_atencion: 'INTRAMURAL',
@@ -280,7 +317,7 @@ export const AtencionView: React.FC = () => {
     }
   };
 
-  // Generar todos los FUAs pendientes en lote
+  // Generar todos los FUAs pendientes en lote (Solo para pacientes SIS con diagnósticos)
   const handleGenerarTodosFuasPendientes = () => {
     const pendientes = atenciones.filter((a) => !getFuaForAtencion(a));
     if (pendientes.length === 0) {
@@ -289,9 +326,22 @@ export const AtencionView: React.FC = () => {
     }
 
     let generados = 0;
+    let omitidosNoSis = 0;
+
     for (const atn of pendientes) {
       const pac = pacientes.find((p) => String(p.id) === String(atn.paciente_id));
       if (!pac) continue;
+
+      const segPac = (pac.seguro || '').toUpperCase();
+      const esSis = segPac.includes('SIS') || segPac === 'SUBSIDIADO' || segPac === 'SEMISUBSIDIADO';
+      if (!esSis) {
+        omitidosNoSis++;
+        continue;
+      }
+
+      if (!atn.diagnostico_1 && !atn.diagnostico_2) {
+        continue;
+      }
 
       const prof =
         profesionales.find((p) => String(p.id) === String(atn.profesional_id)) ||
@@ -312,15 +362,15 @@ export const AtencionView: React.FC = () => {
           cie_egreso: atn.cie10_1 || 'F32.9',
         });
       }
-      if (diagnosticosFua.length === 0) {
+      if (atn.diagnostico_2) {
         diagnosticosFua.push({
-          codigo: 'F32.1',
-          descripcion: 'EPISODIO DEPRESIVO MODERADO',
+          codigo: atn.cie10_2 || 'F41.1',
+          descripcion: atn.diagnostico_2,
           tipo: 'D',
           tipo_ingreso: 'D',
-          cie_ingreso: 'F32.1',
+          cie_ingreso: atn.cie10_2 || 'F41.1',
           tipo_egreso: 'D',
-          cie_egreso: 'F32.1',
+          cie_egreso: atn.cie10_2 || 'F41.1',
         });
       }
 
@@ -366,14 +416,19 @@ export const AtencionView: React.FC = () => {
         destino: 'CITA',
       };
 
-      addFUA(fuaData);
-      generados++;
+      const res = addFUA(fuaData);
+      if (res.success) generados++;
     }
 
     setFuaSuccessToast({
       numeroFua: `Lote de ${generados} FUAs`,
-      paciente: 'Todos los pacientes atendidos pendientes',
+      paciente: 'Pacientes SIS atendidos',
     });
+
+    alert(
+      `Proceso finalizado:\n- ${generados} FUA(s) oficial(es) generado(s) para pacientes SIS.\n` +
+      (omitidosNoSis > 0 ? `- ${omitidosNoSis} paciente(s) omitido(s) por no contar con seguro SIS (EsSalud/Particular).` : '')
+    );
   };
 
   // =========================================================================
@@ -435,17 +490,36 @@ export const AtencionView: React.FC = () => {
   const handleIniciarAtencion = (citaId: string) => {
     setAtendiendoCitaId(citaId);
     setAnamnesis('');
-    setDiagnosticos([
-      {
-        codigo: 'F41.1',
-        descripcion: 'Trastorno de ansiedad generalizada',
-        tipo: 'DEFINITIVO',
-      },
-    ]);
+    setExamenMental({
+      apariencia: '',
+      afecto: '',
+      pensamiento: '',
+      sensopercepcion: '',
+    });
+    setDiagnosticos([]);
+    setCieSearch('');
+    setProcedimientoCPMS('');
     setRecetas([]);
+    setNuevoMedNombre('');
+    setNuevaDosis('');
+    setNuevaFrecuencia('');
+    setNuevaDuracion('');
+    setNuevaCantidad(0);
+    setProximaCita('');
+    setDestinoFinal('CITA_CONTROL');
+  };
+
+  const handleConfirmarCancelacionConsultorio = () => {
+    if (!cancelingCitaId) return;
+    cancelarCita(cancelingCitaId, motivoCancelacion || 'Paciente se retiró del establecimiento');
+    setCancelingCitaId(null);
   };
 
   const handleAddReceta = () => {
+    if (!nuevoMedNombre) {
+      alert('Seleccione un medicamento del petitorio SISMED.');
+      return;
+    }
     const medSel = MEDICAMENTOS_SALUD_MENTAL.find((m) => m.nombre === nuevoMedNombre);
     const nuevo: MedicamentoReceta = {
       id: 'rec-' + Date.now(),
@@ -455,10 +529,15 @@ export const AtencionView: React.FC = () => {
       dosis: nuevaDosis,
       frecuencia: nuevaFrecuencia,
       duracion: nuevaDuracion,
-      cantidad: nuevaCantidad,
-      indicaciones: `${nuevaDosis} ${nuevaFrecuencia} durante ${nuevaDuracion}.`,
+      cantidad: nuevaCantidad || 1,
+      indicaciones: `${nuevaDosis || ''} ${nuevaFrecuencia || ''} durante ${nuevaDuracion || ''}.`.trim(),
     };
     setRecetas([...recetas, nuevo]);
+    setNuevoMedNombre('');
+    setNuevaDosis('');
+    setNuevaFrecuencia('');
+    setNuevaDuracion('');
+    setNuevaCantidad(0);
   };
 
   const handleRemoveReceta = (id: string) => {
@@ -485,6 +564,29 @@ export const AtencionView: React.FC = () => {
       profesionales.find((p) => p.id === cita.profesional_id) || profesionales[0];
     const triajeCita = triajes.find((t) => t.cita_id === cita.id);
 
+    const examenTexto = [
+      examenMental.apariencia ? `Apariencia: ${examenMental.apariencia}` : '',
+      examenMental.afecto ? `Afecto: ${examenMental.afecto}` : '',
+      examenMental.pensamiento ? `Pensamiento: ${examenMental.pensamiento}` : '',
+      examenMental.sensopercepcion ? `Sensopercepción: ${examenMental.sensopercepcion}` : '',
+    ]
+      .filter(Boolean)
+      .join('. ');
+
+    const procedimientoTexto = procedimientoCPMS
+      ? procedimientoCPMS === '99203'
+        ? '99203 - Consulta Médica Especializada'
+        : procedimientoCPMS === '90834'
+        ? '90834 - Psicoterapia Individual (45-50 min)'
+        : procedimientoCPMS === '90837'
+        ? '90837 - Psicoterapia Individual Prolongada (60 min)'
+        : procedimientoCPMS === '96101'
+        ? '96101 - Evaluación Psicológica Integral'
+        : procedimientoCPMS === '99213'
+        ? '99213 - Consulta Médica de Seguimiento / Control'
+        : `CPMS ${procedimientoCPMS}`
+      : undefined;
+
     const nuevaAtencionData = {
       cita_id: cita.id,
       paciente_id: cita.paciente_id,
@@ -498,16 +600,15 @@ export const AtencionView: React.FC = () => {
       saturacion_o2: triajeCita?.spo2?.toString() || '98',
       frecuencia_cardiaca: triajeCita?.frecuencia_cardiaca?.toString() || '72',
       frecuencia_respiratoria: triajeCita?.frecuencia_respiratoria?.toString() || '18',
-      motivo_consulta: anamnesis || 'Paciente asiste a evaluación especializada de salud mental.',
-      examen_mental: `${examenMental.apariencia} Afecto: ${examenMental.afecto}. Pensamiento: ${examenMental.pensamiento}. Sensopercepción: ${examenMental.sensopercepcion}`,
-      diagnostico_1: diagnosticos[0]?.descripcion || 'Trastorno de ansiedad generalizada',
-      cie10_1: diagnosticos[0]?.codigo || 'F41.1',
+      motivo_consulta: anamnesis || cita.motivo_consulta || 'Evaluación en consultorio de salud mental.',
+      examen_mental: examenTexto || undefined,
+      diagnostico_1: diagnosticos[0]?.descripcion || undefined,
+      cie10_1: diagnosticos[0]?.codigo || undefined,
       diagnostico_2: diagnosticos[1]?.descripcion || undefined,
       cie10_2: diagnosticos[1]?.codigo || undefined,
-      procedimientos:
-        procedimientoCPMS === '99203'
-          ? '99203 - Consulta Médica Especializada'
-          : '90834 - Psicoterapia Individual',
+      diagnostico_3: diagnosticos[2]?.descripcion || undefined,
+      cie10_3: diagnosticos[2]?.codigo || undefined,
+      procedimientos: procedimientoTexto,
       recetas: recetas,
       proxima_cita_fecha: proximaCita || undefined,
       destino_final: destinoFinal as any,
@@ -618,12 +719,79 @@ export const AtencionView: React.FC = () => {
             onChange={(e) => setSelectedConsultorioId(e.target.value)}
             className="text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg px-2.5 py-1.5 cursor-pointer focus:outline-none"
           >
-            {consultorios.map((c) => (
+            {consultoriosConPendientes.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.codigo}: {c.nombre}
+                {c.codigo}: {c.nombre} ({c.pendientesCount} {c.pendientesCount === 1 ? 'paciente en espera' : 'pacientes en espera'})
               </option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* MONITOREO DE ESTADO DE CONSULTORIOS (PACIENTES PENDIENTES DE ATENCIÓN) */}
+      {/* ========================================================================= */}
+      <div className="bg-white dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <DoorOpen size={18} className="text-teal-600 dark:text-teal-400" />
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wide">
+              Pacientes Pendientes por Consultorio
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-500 font-medium">
+            Haga clic en un consultorio para atender su sala de espera inmediatamente
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {consultoriosConPendientes.map((cons) => {
+            const isSelected = cons.id === selectedConsultorioId;
+            const tienePendientes = cons.pendientesCount > 0;
+            return (
+              <button
+                key={cons.id}
+                type="button"
+                onClick={() => {
+                  setSelectedConsultorioId(cons.id);
+                  setSubTab('consultorio');
+                }}
+                className={`flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  isSelected
+                    ? 'border-teal-500 bg-teal-50/70 dark:bg-teal-950/40 ring-2 ring-teal-500/20'
+                    : tienePendientes
+                    ? 'border-amber-300 dark:border-amber-700/60 bg-amber-50/40 dark:bg-amber-950/20 hover:border-amber-400'
+                    : 'border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <div className="min-w-0 pr-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                      {cons.codigo}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold truncate">
+                      {cons.nombre}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                    {cons.profesional_nombre}
+                  </p>
+                </div>
+
+                <div className="shrink-0 text-right">
+                  {tienePendientes ? (
+                    <div className="px-2.5 py-1 rounded-lg bg-amber-500 text-white font-black text-xs shadow-xs animate-pulse">
+                      {cons.pendientesCount} {cons.pendientesCount === 1 ? 'pendiente' : 'pendientes'}
+                    </div>
+                  ) : (
+                    <div className="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">
+                      Al día (0)
+                    </div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -901,47 +1069,84 @@ export const AtencionView: React.FC = () => {
 
                           {/* ESTADO FUA */}
                           <td className="py-3.5 px-4">
-                            {fua ? (
-                              <div className="space-y-0.5">
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                  <ShieldCheck size={12} />
-                                  <span>FUA GENERADO</span>
+                            {(() => {
+                              const segPac = (pac?.seguro || '').toUpperCase();
+                              const pacTieneSis = segPac.includes('SIS') || segPac === 'SUBSIDIADO' || segPac === 'SEMISUBSIDIADO';
+
+                              if (fua) {
+                                return (
+                                  <div className="space-y-0.5">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                      <ShieldCheck size={12} />
+                                      <span>FUA GENERADO</span>
+                                    </span>
+                                    <div className="text-[11px] font-mono font-bold text-rose-600 dark:text-rose-400 pl-1">
+                                      {fua.numero_fua}
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              if (!pacTieneSis) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-750 text-slate-500 border border-slate-200 dark:border-slate-700" title="Solo pacientes SIS generan FUA">
+                                    <span>NO APLICA FUA ({pac?.seguro || 'NO SIS'})</span>
+                                  </span>
+                                );
+                              }
+
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                                  <AlertCircle size={12} />
+                                  <span>SIN FUA EMITIDO</span>
                                 </span>
-                                <div className="text-[11px] font-mono font-bold text-rose-600 dark:text-rose-400 pl-1">
-                                  {fua.numero_fua}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                                <AlertCircle size={12} />
-                                <span>SIN FUA EMITIDO</span>
-                              </span>
-                            )}
+                              );
+                            })()}
                           </td>
 
                           {/* ACCIONES */}
                           <td className="py-3.5 px-4 text-center">
                             <div className="flex items-center justify-center gap-2">
                               {/* BOTÓN VER FUA O GENERAR FUA */}
-                              {fua ? (
-                                <button
-                                  onClick={() => setSelectedFuaForPreview(fua)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
-                                  title="Ver e Imprimir Formato Oficial FUA A4 Doble Cara"
-                                >
-                                  <Eye size={14} />
-                                  <span>Ver FUA</span>
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => handleGenerarFuaParaAtencion(atn)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1e3a5f] hover:bg-[#284f80] text-white rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
-                                  title="Generar FUA Oficial para este paciente y atención"
-                                >
-                                  <FileText size={14} />
-                                  <span>Generar FUA</span>
-                                </button>
-                              )}
+                              {(() => {
+                                const segPac = (pac?.seguro || '').toUpperCase();
+                                const pacTieneSis = segPac.includes('SIS') || segPac === 'SUBSIDIADO' || segPac === 'SEMISUBSIDIADO';
+
+                                if (fua) {
+                                  return (
+                                    <button
+                                      onClick={() => setSelectedFuaForPreview(fua)}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
+                                      title="Ver e Imprimir Formato Oficial FUA A4 Doble Cara"
+                                    >
+                                      <Eye size={14} />
+                                      <span>Ver FUA</span>
+                                    </button>
+                                  );
+                                }
+
+                                if (!pacTieneSis) {
+                                  return (
+                                    <span
+                                      className="px-2.5 py-1.5 text-[11px] font-medium text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-xl"
+                                      title="Paciente no cuenta con SIS (Particular/EsSalud). FUA no exigible."
+                                    >
+                                      No SIS
+                                    </span>
+                                  );
+                                }
+
+                                return (
+                                  <button
+                                    onClick={() => handleGenerarFuaParaAtencion(atn)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1e3a5f] hover:bg-[#284f80] text-white rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
+                                    title="Generar FUA Oficial para este paciente y atención"
+                                  >
+                                    <FileText size={14} />
+                                    <span>Generar FUA</span>
+                                  </button>
+                                );
+                              })()}
 
                               {/* BOTÓN DETALLE CLÍNICO */}
                               <button
@@ -1044,7 +1249,7 @@ export const AtencionView: React.FC = () => {
                       </div>
 
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h4 className="font-bold text-sm text-slate-900 dark:text-white">
                             {pac?.apellidos_nombres}
                           </h4>
@@ -1053,14 +1258,30 @@ export const AtencionView: React.FC = () => {
                               LLAMADO EN PANTALLA
                             </span>
                           )}
+                          {c.numero_ticket && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedCitaTicket(c);
+                                setIsTicketModalOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] font-bold font-mono hover:bg-indigo-100 transition-colors cursor-pointer"
+                              title="Ver e Imprimir Ticket de Atención"
+                            >
+                              <Ticket size={11} />
+                              <span>{c.numero_ticket}</span>
+                            </button>
+                          )}
                         </div>
 
-                        <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 font-medium">
+                        <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 font-medium flex-wrap">
                           <span>
                             {pac?.tipo_documento}: {pac?.numero_documento || pac?.codigo_temporal}
                           </span>
                           <span>•</span>
-                          <span>Seguro: {pac?.seguro || 'SIS'}</span>
+                          <span className={pac?.seguro === 'SIS' ? 'font-bold text-teal-600' : ''}>
+                            Seguro: {pac?.seguro || 'SIS'}
+                          </span>
                           {tr && (
                             <>
                               <span>•</span>
@@ -1073,8 +1294,22 @@ export const AtencionView: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
                       <button
+                        type="button"
+                        onClick={() => {
+                          setCancelingCitaId(c.id);
+                          setMotivoCancelacion('Paciente se retiró de la sala de espera sin ingresar a consulta.');
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+                        title="Marcar como retirado o cancelar cita si el paciente ya no está en la sala"
+                      >
+                        <AlertCircle size={14} />
+                        <span className="hidden sm:inline">Retirado / Cancelar</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleLlamar(c.id)}
                         className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
                         title="Llamar en pantalla de sala de espera"
@@ -1084,6 +1319,7 @@ export const AtencionView: React.FC = () => {
                       </button>
 
                       <button
+                        type="button"
                         onClick={() => handleIniciarAtencion(c.id)}
                         className="flex items-center gap-1.5 px-4 py-2 bg-[#1A2B4A] hover:bg-[#243b5e] text-white rounded-xl text-xs font-bold cursor-pointer shadow-sm transition-all"
                       >
@@ -1178,9 +1414,25 @@ export const AtencionView: React.FC = () => {
 
               {/* 2. Examen Mental */}
               <div className="space-y-3">
-                <label className="block text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
-                  2. Examen del Estado Mental
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
+                    2. Examen del Estado Mental
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExamenMental({
+                        apariencia: 'Consciente, orientado en tiempo, espacio y persona, aseo y arreglo personal adecuado.',
+                        afecto: 'Eutímico, reactivo, sin labilidad ni embotamiento afectivo.',
+                        pensamiento: 'Curso coherente y lógico, sin ideas delirantes ni ideación de daño/suicida.',
+                        sensopercepcion: 'Sin alteraciones sensoperceptivas ni alucinaciones activas.',
+                      })
+                    }
+                    className="text-[11px] text-teal-700 dark:text-teal-400 hover:underline font-semibold cursor-pointer"
+                  >
+                    + Cargar plantilla estándar (Sin alteraciones)
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                   <div>
                     <span className="font-semibold text-slate-700 dark:text-slate-300">
@@ -1188,6 +1440,7 @@ export const AtencionView: React.FC = () => {
                     </span>
                     <input
                       type="text"
+                      placeholder="Describir conciencia, porte, higiene y orientación..."
                       value={examenMental.apariencia}
                       onChange={(e) =>
                         setExamenMental({ ...examenMental, apariencia: e.target.value })
@@ -1201,6 +1454,7 @@ export const AtencionView: React.FC = () => {
                     </span>
                     <input
                       type="text"
+                      placeholder="Describir estado de ánimo, afecto y reactividad emocional..."
                       value={examenMental.afecto}
                       onChange={(e) =>
                         setExamenMental({ ...examenMental, afecto: e.target.value })
@@ -1214,6 +1468,7 @@ export const AtencionView: React.FC = () => {
                     </span>
                     <input
                       type="text"
+                      placeholder="Describir fluidez, coherencia, ideas sobrevaloradas u obsesivas..."
                       value={examenMental.pensamiento}
                       onChange={(e) =>
                         setExamenMental({ ...examenMental, pensamiento: e.target.value })
@@ -1227,6 +1482,7 @@ export const AtencionView: React.FC = () => {
                     </span>
                     <input
                       type="text"
+                      placeholder="Describir alucinaciones, ilusiones e introspección..."
                       value={examenMental.sensopercepcion}
                       onChange={(e) =>
                         setExamenMental({ ...examenMental, sensopercepcion: e.target.value })
@@ -1249,7 +1505,7 @@ export const AtencionView: React.FC = () => {
                     type="text"
                     value={cieSearch}
                     onChange={(e) => setCieSearch(e.target.value)}
-                    placeholder="Buscar diagnóstico CIE-10 por código o nombre (ej. F32, Depresión, Ansiedad)..."
+                    placeholder="Buscar diagnóstico CIE-10 por código o nombre (ej. F32, F41, Depresión, Ansiedad)..."
                     className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500"
                   />
                   {cieSearch && (
@@ -1277,50 +1533,56 @@ export const AtencionView: React.FC = () => {
                 </div>
 
                 {/* Lista de Diagnósticos Seleccionados */}
-                <div className="space-y-2">
-                  {diagnosticos.map((d, index) => (
-                    <div
-                      key={d.codigo}
-                      className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-teal-700 dark:text-teal-300">
-                          {d.codigo}
-                        </span>
-                        <span className="font-medium text-slate-800 dark:text-slate-200">
-                          {d.descripcion}
-                        </span>
+                {diagnosticos.length === 0 ? (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 text-slate-400 text-xs text-center">
+                    En blanco. Utilice el buscador superior para seleccionar los diagnósticos hallados en esta consulta.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {diagnosticos.map((d, index) => (
+                      <div
+                        key={d.codigo}
+                        className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 text-xs"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-teal-700 dark:text-teal-300">
+                            {d.codigo}
+                          </span>
+                          <span className="font-medium text-slate-800 dark:text-slate-200">
+                            {d.descripcion}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={d.tipo}
+                            onChange={(e) => {
+                              const newTipo = e.target.value as TipoDiagnostico;
+                              setDiagnosticos(
+                                diagnosticos.map((item, idx) =>
+                                  idx === index ? { ...item, tipo: newTipo } : item
+                                )
+                              );
+                            }}
+                            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-xs"
+                          >
+                            <option value="PRESUNTIVO">Presuntivo</option>
+                            <option value="DEFINITIVO">Definitivo</option>
+                            <option value="REPETIDO">Repetido</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDiagnosticos(diagnosticos.filter((_, idx) => idx !== index))
+                            }
+                            className="text-rose-500 hover:text-rose-700 p-1"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={d.tipo}
-                          onChange={(e) => {
-                            const newTipo = e.target.value as TipoDiagnostico;
-                            setDiagnosticos(
-                              diagnosticos.map((item, idx) =>
-                                idx === index ? { ...item, tipo: newTipo } : item
-                              )
-                            );
-                          }}
-                          className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-xs"
-                        >
-                          <option value="PRESUNTIVO">Presuntivo</option>
-                          <option value="DEFINITIVO">Definitivo</option>
-                          <option value="REPETIDO">Repetido</option>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDiagnosticos(diagnosticos.filter((_, idx) => idx !== index))
-                          }
-                          className="text-rose-500 hover:text-rose-700 p-1"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* 4. Procedimientos CPMS */}
@@ -1333,10 +1595,12 @@ export const AtencionView: React.FC = () => {
                   onChange={(e) => setProcedimientoCPMS(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500"
                 >
+                  <option value="">-- Sin procedimiento o seleccionar procedimiento realizado --</option>
                   <option value="99203">99203 - Consulta Médica Especializada</option>
                   <option value="90834">90834 - Psicoterapia Individual (45-50 min)</option>
                   <option value="90837">90837 - Psicoterapia Individual Prolongada (60 min)</option>
                   <option value="96101">96101 - Evaluación Psicológica Integral</option>
+                  <option value="99213">99213 - Consulta Médica de Seguimiento / Control</option>
                 </select>
               </div>
 
@@ -1355,6 +1619,7 @@ export const AtencionView: React.FC = () => {
                       onChange={(e) => setNuevoMedNombre(e.target.value)}
                       className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg"
                     >
+                      <option value="">-- Seleccionar Medicamento --</option>
                       {MEDICAMENTOS_SALUD_MENTAL.map((m) => (
                         <option key={m.id} value={m.nombre}>
                           {m.nombre} ({m.concentracion})
@@ -1478,54 +1743,156 @@ export const AtencionView: React.FC = () => {
       {/* ========================================================================= */}
       {/* MODAL ALERTA: ATENCIÓN FINALIZADA Y OPCIÓN PARA GENERAR FUA DE INMEDIATO */}
       {/* ========================================================================= */}
-      {atencionRecienGuardada && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-800 max-w-md w-full rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 text-center">
-            <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center mx-auto">
-              <CheckCircle size={32} />
-            </div>
+      {atencionRecienGuardada && (() => {
+        const pacReciente = pacientes.find((p) => String(p.id) === String(atencionRecienGuardada.paciente_id));
+        const segReciente = (pacReciente?.seguro || '').toUpperCase();
+        const pacienteTieneSis = segReciente.includes('SIS') || segReciente === 'SUBSIDIADO' || segReciente === 'SEMISUBSIDIADO';
 
-            <div>
-              <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                ¡Atención Registrada Exitosamente!
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                La consulta médica ha sido guardada en la base de datos oficial.
-              </p>
-            </div>
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-800 max-w-md w-full rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 text-center">
+              <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center mx-auto">
+                <CheckCircle size={32} />
+              </div>
 
-            <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-xl border border-blue-200 dark:border-blue-900 text-xs text-blue-900 dark:text-blue-200 text-left">
-              <strong>¿Desea generar el Formato Único de Atención (FUA)?</strong>
-              <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
-                Para atenciones de pacientes SIS, el sistema asignará el número correlativo oficial de forma automática.
-              </p>
-            </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                  ¡Atención Registrada Exitosamente!
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  La consulta médica para <strong>{pacReciente?.apellidos_nombres}</strong> ha sido guardada en la base de datos oficial.
+                </p>
+              </div>
 
-            <div className="flex flex-col gap-2 pt-2">
-              <button
-                onClick={() => {
-                  const atn = atencionRecienGuardada;
-                  setAtencionRecienGuardada(null);
-                  handleGenerarFuaParaAtencion(atn);
-                }}
-                className="w-full py-2.5 px-4 bg-[#1e3a5f] hover:bg-[#284f80] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
-              >
-                <FileText size={16} />
-                <span>📄 Generar y Ver FUA Oficial Ahora</span>
-              </button>
+              {pacienteTieneSis ? (
+                <>
+                  <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-xl border border-blue-200 dark:border-blue-900 text-xs text-blue-900 dark:text-blue-200 text-left">
+                    <strong>¿Desea generar el Formato Único de Atención (FUA)?</strong>
+                    <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
+                      Paciente asegurado al SIS. El sistema asignará el número correlativo oficial de forma automática.
+                    </p>
+                  </div>
 
-              <button
-                onClick={() => {
-                  setAtencionRecienGuardada(null);
-                  setSubTab('atendidos');
-                }}
-                className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-all"
-              >
-                📋 Ir a la Lista de Pacientes Atendidos
-              </button>
+                  <div className="flex flex-col gap-2 pt-2">
+                    <button
+                      onClick={() => {
+                        const atn = atencionRecienGuardada;
+                        setAtencionRecienGuardada(null);
+                        handleGenerarFuaParaAtencion(atn);
+                      }}
+                      className="w-full py-2.5 px-4 bg-[#1e3a5f] hover:bg-[#284f80] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
+                    >
+                      <FileText size={16} />
+                      <span>📄 Generar y Ver FUA Oficial Ahora</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setAtencionRecienGuardada(null);
+                        setSubTab('atendidos');
+                      }}
+                      className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-all"
+                    >
+                      📋 Ir a la Lista de Pacientes Atendidos
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-900 text-xs text-amber-900 dark:text-amber-200 text-left">
+                    <strong>Paciente con Seguro: {pacReciente?.seguro || 'PARTICULAR'}</strong>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
+                      De acuerdo con la normativa MINSA, el Formato Único de Atención (FUA) aplica exclusivamente para asegurados al Seguro Integral de Salud (SIS). Para este paciente no se requiere emitir FUA.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2 pt-2">
+                    <button
+                      onClick={() => {
+                        setAtencionRecienGuardada(null);
+                        setSubTab('atendidos');
+                      }}
+                      className="w-full py-2.5 px-4 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer transition-all"
+                    >
+                      Aceptar y ver Pacientes Atendidos
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
-        </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL DE CANCELACIÓN DE PACIENTE EN CONSULTORIO (RETIRADO) */}
+      {/* ========================================================================= */}
+      {cancelingCitaId && (() => {
+        const citaACancelar = citas.find((c) => c.id === cancelingCitaId);
+        const pacACancelar = pacientes.find((p) => p.id === citaACancelar?.paciente_id);
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150">
+            <div className="bg-white dark:bg-slate-800 max-w-md w-full rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl p-6 space-y-4">
+              <div className="flex items-center gap-3 text-rose-600">
+                <div className="p-2 bg-rose-100 dark:bg-rose-950/50 rounded-xl">
+                  <AlertCircle size={22} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                    Cancelar Atención / Paciente Retirado
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {pacACancelar?.apellidos_nombres} ({citaACancelar?.hora_cita})
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <label className="font-bold text-slate-700 dark:text-slate-300 block">
+                  Motivo de cancelación o retiro de la sala:
+                </label>
+                <textarea
+                  value={motivoCancelacion}
+                  onChange={(e) => setMotivoCancelacion(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-rose-500"
+                  placeholder="Ej. Paciente llamado reiteradas veces en pantalla y no responde en sala; se retiró del establecimiento."
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setCancelingCitaId(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl cursor-pointer"
+                >
+                  Volver
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmarCancelacionConsultorio}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+                >
+                  Confirmar Cancelación
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL TICKET DE ATENCIÓN */}
+      {/* ========================================================================= */}
+      {isTicketModalOpen && selectedCitaTicket && (
+        <TicketAtencionModal
+          cita={selectedCitaTicket}
+          onClose={() => {
+            setIsTicketModalOpen(false);
+            setSelectedCitaTicket(null);
+          }}
+        />
       )}
 
       {/* ========================================================================= */}

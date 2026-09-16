@@ -231,7 +231,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.filter((c: any) => !c.id || !c.id.match(/^cita-[1-9]$/));
+          return parsed
+            .filter((c: any) => !c.id || !c.id.match(/^cita-[1-9]$/))
+            .map((c: any, idx: number) => ({
+              ...c,
+              numero_ticket:
+                c.numero_ticket ||
+                `TKT-${c.fecha_cita ? c.fecha_cita.split('-')[0] : '2026'}-${String(idx + 1).padStart(4, '0')}`,
+            }));
         }
       } catch (e) {
         console.warn('Error parseando citas:', e);

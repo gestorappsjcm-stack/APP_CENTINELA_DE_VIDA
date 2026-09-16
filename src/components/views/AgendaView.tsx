@@ -16,11 +16,12 @@ import {
   AlertCircle,
   Ticket,
   Printer,
+  ShieldCheck,
 } from 'lucide-react';
 import { TicketAtencionModal } from '../modals/TicketAtencionModal';
 
 export const AgendaView: React.FC = () => {
-  const { citas, pacientes, profesionales, addCita, confirmarCita, cancelarCita, setCurrentTab } = useApp();
+  const { citas, pacientes, profesionales, addCita, updatePaciente, confirmarCita, cancelarCita, setCurrentTab } = useApp();
 
   const [filtroFecha, setFiltroFecha] = useState<string>(new Date().toISOString().split('T')[0]);
   const [filtroEstado, setFiltroEstado] = useState<string>('');
@@ -33,8 +34,10 @@ export const AgendaView: React.FC = () => {
   const [citaFecha, setCitaFecha] = useState(new Date().toISOString().split('T')[0]);
   const [citaHora, setCitaHora] = useState('09:00');
   const [citaProfId, setCitaProfId] = useState('');
-  const [citaTipo, setCitaTipo] = useState<'CONSULTA' | 'TRIAJE' | 'EMERGENCIA' | 'TELECONSULTA' | 'VISITA_DOMICILIARIA'>('CONSULTA');
+  const [citaTipo, setCitaTipo] = useState<'CONSULTA' | 'EMERGENCIA' | 'TELECONSULTA' | 'VISITA_DOMICILIARIA'>('CONSULTA');
   const [citaMotivo, setCitaMotivo] = useState('');
+  const [citaSeguro, setCitaSeguro] = useState<'SIS' | 'ESSALUD' | 'PARTICULAR' | 'OTRO'>('SIS');
+  const [actualizarSeguroEnFicha, setActualizarSeguroEnFicha] = useState(false);
 
   // Modal Ticket de Atención
   const [selectedCitaTicket, setSelectedCitaTicket] = useState<Cita | null>(null);
@@ -60,6 +63,11 @@ export const AgendaView: React.FC = () => {
       return;
     }
 
+    // Actualizar condición del seguro en la ficha del paciente si fue solicitado
+    if (actualizarSeguroEnFicha && selectedPacienteId) {
+      updatePaciente(selectedPacienteId, { seguro: citaSeguro as any });
+    }
+
     const res = addCita({
       paciente_id: selectedPacienteId,
       profesional_id: citaProfId || undefined,
@@ -68,12 +76,14 @@ export const AgendaView: React.FC = () => {
       tipo_cita: citaTipo,
       estado: 'PENDIENTE',
       motivo_consulta: citaMotivo.trim() || undefined,
+      seguro_cita: citaSeguro,
     });
 
     setIsModalNuevaCita(false);
     setSelectedPacienteId('');
     setPacienteSearch('');
     setCitaMotivo('');
+    setActualizarSeguroEnFicha(false);
 
     if (res?.cita) {
       setSelectedCitaTicket(res.cita);
@@ -177,6 +187,7 @@ export const AgendaView: React.FC = () => {
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 uppercase font-semibold border-b border-slate-200 dark:border-slate-700">
               <tr>
+                <th className="py-3 px-3 text-center">N° Ticket</th>
                 <th className="py-3 px-4">Paciente</th>
                 <th className="py-3 px-3">Fecha y Hora</th>
                 <th className="py-3 px-3">Profesional Asignado</th>
@@ -189,7 +200,7 @@ export const AgendaView: React.FC = () => {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
               {citasFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-400 text-xs">
+                  <td colSpan={8} className="py-10 text-center text-slate-400 text-xs">
                     No se encontraron citas registradas con los filtros seleccionados.
                   </td>
                 </tr>
@@ -207,14 +218,31 @@ export const AgendaView: React.FC = () => {
                       ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30'
                       : 'bg-rose-100 text-rose-800 dark:bg-rose-900/30';
 
+                  const ticketCode = c.numero_ticket || `TKT-${c.id.replace('cita-', '').slice(-6)}`;
+
                   return (
                     <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-750/50 transition-colors">
+                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                        <button
+                          onClick={() => {
+                            setSelectedCitaTicket(c);
+                            setIsRecienCreadaTicket(false);
+                            setIsTicketModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 text-blue-700 dark:text-blue-300 rounded-lg font-mono font-bold text-xs border border-blue-200 dark:border-blue-800 transition-colors cursor-pointer"
+                          title="Click para ver e imprimir Ticket"
+                        >
+                          <Ticket size={13} className="text-blue-600 dark:text-blue-400" />
+                          <span>{ticketCode}</span>
+                        </button>
+                      </td>
+
                       <td className="py-3 px-4">
                         <div className="font-bold text-slate-900 dark:text-white">
                           {paciente?.apellidos_nombres || 'Paciente no identificado'}
                         </div>
                         <div className="text-[11px] text-slate-400 font-mono">
-                          {paciente?.tipo_documento}: {paciente?.numero_documento || paciente?.codigo_temporal} • Seguro: {paciente?.seguro}
+                          {paciente?.tipo_documento}: {paciente?.numero_documento || paciente?.codigo_temporal} • Seguro: {c.seguro_cita || paciente?.seguro || 'SIS'}
                         </div>
                       </td>
 
@@ -341,17 +369,73 @@ export const AgendaView: React.FC = () => {
                           onClick={() => {
                             setSelectedPacienteId(p.id);
                             setPacienteSearch(p.apellidos_nombres);
+                            const seg = (p.seguro?.toUpperCase() as any) || 'SIS';
+                            setCitaSeguro(seg.includes('SIS') ? 'SIS' : seg.includes('ESSALUD') ? 'ESSALUD' : seg.includes('PARTICULAR') ? 'PARTICULAR' : 'OTRO');
                           }}
                           className={`p-2 hover:bg-teal-50 dark:hover:bg-teal-950/30 cursor-pointer ${
                             selectedPacienteId === p.id ? 'bg-teal-100 font-bold text-teal-900' : ''
                           }`}
                         >
-                          {p.apellidos_nombres} ({p.tipo_documento}: {p.numero_documento || p.codigo_temporal})
+                          {p.apellidos_nombres} ({p.tipo_documento}: {p.numero_documento || p.codigo_temporal}) • Seguro: {p.seguro || 'SIS'}
                         </div>
                       ))}
                   </div>
                 )}
               </div>
+
+              {/* Confirmación y Validación de Cobertura de Seguro */}
+              {selectedPacienteId && (
+                <div className="p-3.5 bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <ShieldCheck size={14} className="text-blue-600" />
+                      Condición del Seguro para esta Cita:
+                    </span>
+                    <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${
+                      citaSeguro === 'SIS'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                    }`}>
+                      {citaSeguro}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <select
+                        value={citaSeguro}
+                        onChange={(e) => setCitaSeguro(e.target.value as any)}
+                        className="w-full px-2.5 py-1.5 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg cursor-pointer"
+                      >
+                        <option value="SIS">SIS (Seguro Integral de Salud)</option>
+                        <option value="ESSALUD">EsSalud</option>
+                        <option value="PARTICULAR">Particular / Sin Seguro</option>
+                        <option value="OTRO">Otro Seguro</option>
+                      </select>
+                    </div>
+
+                    <label className="flex items-center gap-2 text-[11px] font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={actualizarSeguroEnFicha}
+                        onChange={(e) => setActualizarSeguroEnFicha(e.target.checked)}
+                        className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4"
+                      />
+                      <span>Actualizar seguro en Ficha del Paciente</span>
+                    </label>
+                  </div>
+
+                  {citaSeguro === 'SIS' ? (
+                    <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
+                      ✓ Paciente con SIS activo: Habilitado para emisión de Formato Único de Atención (FUA).
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-amber-700 dark:text-amber-300 font-medium">
+                      ⚠️ Atención: Con seguro {citaSeguro} no se generará FUA (normativa MINSA exclusiva para afiliados SIS).
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -408,7 +492,6 @@ export const AgendaView: React.FC = () => {
                   className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none cursor-pointer"
                 >
                   <option value="CONSULTA">Consulta Médica / Psicológica</option>
-                  <option value="TRIAJE">Triaje</option>
                   <option value="EMERGENCIA">Emergencia</option>
                   <option value="TELECONSULTA">Teleconsulta</option>
                   <option value="VISITA_DOMICILIARIA">Visita Domiciliaria</option>

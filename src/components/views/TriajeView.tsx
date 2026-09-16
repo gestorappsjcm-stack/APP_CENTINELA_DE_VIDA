@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { PrioridadTriaje } from '../../types';
+import { PrioridadTriaje, Cita } from '../../types';
+import { TicketAtencionModal } from '../modals/TicketAtencionModal';
 import {
   Stethoscope,
   Clock,
@@ -13,13 +14,25 @@ import {
   Wind,
   X,
   Building2,
+  Ticket,
+  Calendar,
+  AlertCircle,
 } from 'lucide-react';
 
 export const TriajeView: React.FC = () => {
-  const { citas, pacientes, consultorios, triajes, addTriaje, setCurrentTab } = useApp();
+  const { citas, pacientes, consultorios, triajes, addTriaje, cancelarCita, setCurrentTab } = useApp();
 
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'pendiente' | 'completado' | 'atendido'>('todos');
+  const [filtroFechaTriaje, setFiltroFechaTriaje] = useState<'HOY' | 'TODOS'>('HOY');
   const [selectedCitaId, setSelectedCitaId] = useState<string | null>(null);
+
+  // Ticket modal
+  const [selectedCitaTicket, setSelectedCitaTicket] = useState<Cita | null>(null);
+  const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
+
+  // Modal Cancelar / Paciente Retirado
+  const [cancelingCitaId, setCancelingCitaId] = useState<string | null>(null);
+  const [motivoCancelacion, setMotivoCancelacion] = useState('Paciente se retiró del establecimiento sin continuar la atención');
 
   // Form de Triaje
   const [peso, setPeso] = useState('');
@@ -33,9 +46,15 @@ export const TriajeView: React.FC = () => {
   const [motivo, setMotivo] = useState('');
   const [consultorioId, setConsultorioId] = useState(consultorios[0]?.id || '');
 
-  // Citas de hoy
+  // Citas para triaje
   const hoyStr = new Date().toISOString().split('T')[0];
-  const citasHoy = citas.filter((c) => c.fecha_cita === hoyStr || c.fecha_cita === '2026-09-10');
+  const citasHoy = citas.filter((c) => {
+    if (c.estado === 'CANCELADA') return false;
+    if (filtroFechaTriaje === 'HOY') {
+      return c.fecha_cita === hoyStr || c.fecha_cita === '2026-09-10';
+    }
+    return true;
+  });
 
   // Cálculo de IMC
   const pesoNum = parseFloat(peso);
@@ -55,6 +74,13 @@ export const TriajeView: React.FC = () => {
     setPrioridad('VERDE');
     setMotivo('');
     setConsultorioId(consultorios[0]?.id || '');
+  };
+
+  const handleConfirmarCancelacion = () => {
+    if (cancelingCitaId) {
+      cancelarCita(cancelingCitaId, motivoCancelacion.trim() || 'Paciente se retiró del establecimiento sin continuar la atención');
+      setCancelingCitaId(null);
+    }
   };
 
   const handleSaveTriaje = (e: React.FormEvent) => {
@@ -113,43 +139,70 @@ export const TriajeView: React.FC = () => {
         </button>
       </div>
 
-      {/* Filtros de Estado */}
-      <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs overflow-x-auto">
-        <button
-          onClick={() => setFiltroEstado('todos')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
-            filtroEstado === 'todos' ? 'bg-[#1A2B4A] text-white' : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          Todos ({citasHoy.length})
-        </button>
-        <button
-          onClick={() => setFiltroEstado('pendiente')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
-            filtroEstado === 'pendiente' ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          🟡 Pendientes de Triaje ({citasHoy.filter((c) => !c.triaje_completado).length})
-        </button>
-        <button
-          onClick={() => setFiltroEstado('completado')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
-            filtroEstado === 'completado' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          🟢 Triaje Realizado ({citasHoy.filter((c) => c.triaje_completado && !c.atencion_completada).length})
-        </button>
-        <button
-          onClick={() => setFiltroEstado('atendido')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
-            filtroEstado === 'atendido' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          🔵 Atendidos en Consultorio ({citasHoy.filter((c) => c.atencion_completada).length})
-        </button>
+      {/* Filtros de Fecha y Estado */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
+        <div className="flex items-center gap-2 overflow-x-auto">
+          <button
+            onClick={() => setFiltroEstado('todos')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+              filtroEstado === 'todos' ? 'bg-[#1A2B4A] text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            Todos ({citasHoy.length})
+          </button>
+          <button
+            onClick={() => setFiltroEstado('pendiente')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+              filtroEstado === 'pendiente' ? 'bg-amber-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            🟡 Pendientes de Triaje ({citasHoy.filter((c) => !c.triaje_completado).length})
+          </button>
+          <button
+            onClick={() => setFiltroEstado('completado')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+              filtroEstado === 'completado' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            🟢 Triaje Realizado ({citasHoy.filter((c) => c.triaje_completado && !c.atencion_completada).length})
+          </button>
+          <button
+            onClick={() => setFiltroEstado('atendido')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+              filtroEstado === 'atendido' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            🔵 Atendidos en Consultorio ({citasHoy.filter((c) => c.atencion_completada).length})
+          </button>
+        </div>
+
+        {/* Filtro de Fecha: Hoy vs Todos/Días Anteriores */}
+        <div className="flex items-center gap-1 self-end sm:self-auto border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 dark:border-slate-700">
+          <button
+            onClick={() => setFiltroFechaTriaje('HOY')}
+            className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              filtroFechaTriaje === 'HOY'
+                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200'
+                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
+            }`}
+          >
+            Hoy
+          </button>
+          <button
+            onClick={() => setFiltroFechaTriaje('TODOS')}
+            className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              filtroFechaTriaje === 'TODOS'
+                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200'
+                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
+            }`}
+            title="Ver citas de días anteriores aún pendientes"
+          >
+            Ver Días Anteriores / Todos
+          </button>
+        </div>
       </div>
 
-      {/* Lista de Pacientes citados hoy para triaje */}
+      {/* Lista de Pacientes citados para triaje */}
       <div className="space-y-3">
         {citasHoy
           .filter((c) => {
@@ -161,6 +214,7 @@ export const TriajeView: React.FC = () => {
           .map((c) => {
             const pac = pacientes.find((p) => p.id === c.paciente_id);
             const triajeRealizado = triajes.find((t) => t.cita_id === c.id);
+            const ticketNumero = c.numero_ticket || `TKT-${c.id.replace('cita-', '').slice(-6)}`;
 
             return (
               <div
@@ -174,13 +228,28 @@ export const TriajeView: React.FC = () => {
                       {c.hora_cita}
                     </span>
                     <span className="text-[10px] text-slate-400 block font-medium">Cita</span>
+                    <span className="text-[9px] text-slate-400 block font-mono mt-0.5">{c.fecha_cita}</span>
                   </div>
 
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <h4 className="font-bold text-sm md:text-base text-slate-900 dark:text-white">
                         {pac?.apellidos_nombres}
                       </h4>
+
+                      {/* Ticket Pill Interactivo */}
+                      <button
+                        onClick={() => {
+                          setSelectedCitaTicket(c);
+                          setIsTicketModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 font-mono font-bold text-[11px] bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-colors cursor-pointer"
+                        title="Ver e Imprimir Ticket de Atención"
+                      >
+                        <Ticket size={12} className="text-blue-600" />
+                        <span>{ticketNumero}</span>
+                      </button>
+
                       {triajeRealizado && (
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
@@ -204,7 +273,7 @@ export const TriajeView: React.FC = () => {
                       <span>{pac?.edad ? `${pac?.edad} años` : 'Edad no reg.'}</span>
                       <span>•</span>
                       <span className="bg-teal-50 text-teal-700 font-semibold px-2 py-0.5 rounded text-[10px]">
-                        Seguro: {pac?.seguro || 'SIS'}
+                        Seguro: {c.seguro_cita || pac?.seguro || 'SIS'}
                       </span>
                     </div>
 
@@ -225,7 +294,18 @@ export const TriajeView: React.FC = () => {
                 </div>
 
                 {/* Acciones */}
-                <div className="flex items-center gap-2 self-end md:self-auto">
+                <div className="flex flex-wrap items-center gap-2 self-end md:self-auto">
+                  <button
+                    onClick={() => {
+                      setSelectedCitaTicket(c);
+                      setIsTicketModalOpen(true);
+                    }}
+                    className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-xl transition-colors cursor-pointer"
+                    title="Ver / Imprimir Ticket"
+                  >
+                    <Ticket size={16} />
+                  </button>
+
                   {!c.triaje_completado ? (
                     <button
                       onClick={() => handleOpenTriaje(c.id)}
@@ -242,6 +322,21 @@ export const TriajeView: React.FC = () => {
                     <span className="text-xs text-teal-700 dark:text-teal-300 font-semibold flex items-center gap-1 bg-teal-50 dark:bg-teal-950/30 px-3 py-1.5 rounded-lg border border-teal-200">
                       <Clock size={14} /> Esperando en Consultorio
                     </span>
+                  )}
+
+                  {/* Botón para Cancelar Cita / Paciente Retirado */}
+                  {!c.atencion_completada && (
+                    <button
+                      onClick={() => {
+                        setCancelingCitaId(c.id);
+                        setMotivoCancelacion('Paciente se retiró del establecimiento sin continuar la atención médica');
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+                      title="Cancelar cita si el paciente se retiró del establecimiento"
+                    >
+                      <X size={14} />
+                      <span className="hidden lg:inline">Retirado / Cancelar</span>
+                    </button>
                   )}
                 </div>
               </div>
@@ -479,6 +574,69 @@ export const TriajeView: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Modal Confirmar Cancelación de Cita / Paciente Retirado */}
+      {cancelingCitaId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-2.5 bg-rose-100 dark:bg-rose-950/50 rounded-xl">
+                <AlertCircle size={22} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Cancelar Atención de Paciente
+                </h3>
+                <p className="text-xs text-slate-500">¿El paciente se retiró del establecimiento?</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Esta acción removerá al paciente de la lista de espera de Triaje y Consultorios. La cita quedará registrada como <strong>CANCELADA</strong>.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Motivo de cancelación / retiro
+              </label>
+              <textarea
+                rows={2}
+                value={motivoCancelacion}
+                onChange={(e) => setMotivoCancelacion(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setCancelingCitaId(null)}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+              >
+                Volver
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmarCancelacion}
+                className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-sm cursor-pointer"
+              >
+                Confirmar Cancelación
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Ticket de Atención */}
+      {isTicketModalOpen && selectedCitaTicket && (
+        <TicketAtencionModal
+          cita={selectedCitaTicket}
+          onClose={() => {
+            setIsTicketModalOpen(false);
+            setSelectedCitaTicket(null);
+          }}
+        />
       )}
     </div>
   );
