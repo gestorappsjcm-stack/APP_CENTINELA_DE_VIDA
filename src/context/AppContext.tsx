@@ -75,7 +75,7 @@ interface AppContextType {
 
   // Citas
   citas: Cita[];
-  addCita: (cita: Omit<Cita, 'id'>) => { success: boolean; error?: string };
+  addCita: (cita: Omit<Cita, 'id'>) => { success: boolean; cita?: Cita; error?: string };
   confirmarCita: (id: string) => void;
   cancelarCita: (id: string, motivo?: string) => void;
   llamarTurno: (citaId: string, consultorioId?: string) => void;
@@ -614,15 +614,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // CITAS
   const addCita = (cita: Omit<Cita, 'id'>) => {
+    const correlativo = String(citas.length + 1).padStart(4, '0');
+    const anio = new Date().getFullYear();
     const newCita: Cita = {
       ...cita,
       id: `cita-${Date.now()}`,
+      numero_ticket: cita.numero_ticket || `TKT-${anio}-${correlativo}`,
     };
     setCitas((prev) => [...prev, newCita]);
     if (isSupabaseConfigured()) {
       supabaseService.insertCita(newCita).catch((e) => console.warn('Supabase insertCita error:', e));
     }
-    return { success: true };
+    return { success: true, cita: newCita };
   };
 
   const confirmarCita = (id: string) => {

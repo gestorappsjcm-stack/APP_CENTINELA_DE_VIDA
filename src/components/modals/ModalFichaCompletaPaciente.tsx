@@ -21,7 +21,10 @@ import {
   ExternalLink,
   PlusCircle,
   FileText,
+  Ticket,
 } from 'lucide-react';
+import { Cita } from '../../types';
+import { TicketAtencionModal } from './TicketAtencionModal';
 
 interface ModalFichaCompletaPacienteProps {
   paciente: Paciente;
@@ -45,6 +48,8 @@ export const ModalFichaCompletaPaciente: React.FC<ModalFichaCompletaPacienteProp
   } = useApp();
 
   if (!paciente) return null;
+
+  const [selectedCitaTicket, setSelectedCitaTicket] = React.useState<Cita | null>(null);
 
   // Registros asociados al paciente con guards seguros
   const citasPaciente = (citas || []).filter((c) => c && c.paciente_id === paciente.id);
@@ -307,6 +312,7 @@ export const ModalFichaCompletaPaciente: React.FC<ModalFichaCompletaPacienteProp
                       <th className="py-2.5 px-3">Profesional / Consultorio</th>
                       <th className="py-2.5 px-3">Motivo</th>
                       <th className="py-2.5 px-3 text-center">Estado</th>
+                      <th className="py-2.5 px-3 text-center">Ticket</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -347,6 +353,16 @@ export const ModalFichaCompletaPaciente: React.FC<ModalFichaCompletaPacienteProp
                             >
                               {c.estado}
                             </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <button
+                              onClick={() => setSelectedCitaTicket(c)}
+                              title="Ver e Imprimir Ticket de Atención"
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg cursor-pointer transition-colors inline-flex items-center gap-1 text-[11px] font-semibold"
+                            >
+                              <Ticket size={14} />
+                              <span className="hidden sm:inline">Ticket</span>
+                            </button>
                           </td>
                         </tr>
                       );
@@ -620,6 +636,15 @@ export const ModalFichaCompletaPaciente: React.FC<ModalFichaCompletaPacienteProp
           </div>
         </div>
       </div>
+
+      {/* Modal Ticket de Atención */}
+      {selectedCitaTicket && (
+        <TicketAtencionModal
+          cita={selectedCitaTicket}
+          onClose={() => setSelectedCitaTicket(null)}
+          isRecienCreada={false}
+        />
+      )}
     </div>
   );
 };

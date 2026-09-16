@@ -121,6 +121,7 @@ export interface Cita {
   estado: EstadoCita;
   motivo_consulta?: string;
   observaciones?: string;
+  numero_ticket?: string;
   triaje_completado?: boolean;
   atencion_completada?: boolean;
   llamado_pantalla?: boolean;

@@ -14,7 +14,10 @@ import {
   Clock,
   User,
   AlertCircle,
+  Ticket,
+  Printer,
 } from 'lucide-react';
+import { TicketAtencionModal } from '../modals/TicketAtencionModal';
 
 export const AgendaView: React.FC = () => {
   const { citas, pacientes, profesionales, addCita, confirmarCita, cancelarCita, setCurrentTab } = useApp();
@@ -32,6 +35,11 @@ export const AgendaView: React.FC = () => {
   const [citaProfId, setCitaProfId] = useState('');
   const [citaTipo, setCitaTipo] = useState<'CONSULTA' | 'TRIAJE' | 'EMERGENCIA' | 'TELECONSULTA' | 'VISITA_DOMICILIARIA'>('CONSULTA');
   const [citaMotivo, setCitaMotivo] = useState('');
+
+  // Modal Ticket de Atención
+  const [selectedCitaTicket, setSelectedCitaTicket] = useState<Cita | null>(null);
+  const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
+  const [isRecienCreadaTicket, setIsRecienCreadaTicket] = useState(false);
 
   // Modal Cancelar Cita
   const [cancelingCitaId, setCancelingCitaId] = useState<string | null>(null);
@@ -52,7 +60,7 @@ export const AgendaView: React.FC = () => {
       return;
     }
 
-    addCita({
+    const res = addCita({
       paciente_id: selectedPacienteId,
       profesional_id: citaProfId || undefined,
       fecha_cita: citaFecha,
@@ -66,6 +74,12 @@ export const AgendaView: React.FC = () => {
     setSelectedPacienteId('');
     setPacienteSearch('');
     setCitaMotivo('');
+
+    if (res?.cita) {
+      setSelectedCitaTicket(res.cita);
+      setIsRecienCreadaTicket(true);
+      setIsTicketModalOpen(true);
+    }
   };
 
   const handleConfirmarCancelacion = () => {
@@ -232,6 +246,18 @@ export const AgendaView: React.FC = () => {
 
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setSelectedCitaTicket(c);
+                              setIsRecienCreadaTicket(false);
+                              setIsTicketModalOpen(true);
+                            }}
+                            title="Ver e Imprimir Ticket de Atención"
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg cursor-pointer transition-colors"
+                          >
+                            <Ticket size={16} />
+                          </button>
+
                           {c.estado === 'PENDIENTE' && (
                             <button
                               onClick={() => confirmarCita(c.id)}
@@ -456,6 +482,19 @@ export const AgendaView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal Ticket de Atención */}
+      {isTicketModalOpen && selectedCitaTicket && (
+        <TicketAtencionModal
+          cita={selectedCitaTicket}
+          onClose={() => {
+            setIsTicketModalOpen(false);
+            setSelectedCitaTicket(null);
+            setIsRecienCreadaTicket(false);
+          }}
+          isRecienCreada={isRecienCreadaTicket}
+        />
       )}
     </div>
   );

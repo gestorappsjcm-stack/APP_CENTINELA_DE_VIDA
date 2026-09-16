@@ -3,6 +3,7 @@ import { FUA, Paciente, Profesional } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { Printer, ArrowLeft, Eye } from 'lucide-react';
 import { parseMedicamentosList } from '../../lib/medicamentosHelper';
+import { ESCUDO_PERU_DATA_URL } from '../../assets/escudoPeruBase64';
 
 interface FuaPreviewModalProps {
   fua: FUA;
@@ -192,22 +193,10 @@ export const FuaPreviewModal: React.FC<FuaPreviewModalProps> = ({ fua, onClose }
           <div className="encabezado">
             <div className="caja-escudo" id="fua-caja-escudo">
               <img
-                src="/img/escudo_peru.png"
+                src={ESCUDO_PERU_DATA_URL}
                 alt="República del Perú - Escudo Nacional"
                 className="max-h-[36px] max-w-[46px] w-auto h-auto object-contain block mx-auto"
-                onError={(e) => {
-                  const target = e.currentTarget;
-                  target.style.display = 'none';
-                  const fallback = target.nextElementSibling as HTMLElement | null;
-                  if (fallback) fallback.style.display = 'inline-block';
-                }}
               />
-              <svg width="28" height="32" viewBox="0 0 100 120" className="hidden">
-                <rect width="100" height="120" rx="10" fill="#dc2626" />
-                <rect x="25" width="50" height="120" fill="#ffffff" />
-                <circle cx="50" cy="60" r="22" fill="#eab308" stroke="#15803d" strokeWidth="3" />
-                <path d="M 50 42 L 54 52 L 64 52 L 56 59 L 59 70 L 50 64 L 41 70 L 44 59 L 36 52 L 46 52 Z" fill="#b45309" />
-              </svg>
             </div>
             <div className="caja-peru">PERÚ</div>
             <div className="caja-minsa">
