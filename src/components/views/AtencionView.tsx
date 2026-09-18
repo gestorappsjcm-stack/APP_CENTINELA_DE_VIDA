@@ -52,7 +52,10 @@ export const AtencionView: React.FC = () => {
     addAtencion,
     addFUA,
     cancelarCita,
+    updatePaciente,
     setCurrentTab,
+    catalogoDiagnosticos,
+    catalogoProcedimientos,
   } = useApp();
 
   // Selector de Pestaña Activa dentro de Atenciones: 'consultorio' (Sala y Consulta) | 'atendidos' (Historial de Atendidos y FUA)
@@ -352,25 +355,27 @@ export const AtencionView: React.FC = () => {
 
       const diagnosticosFua: FUA['diagnosticos'] = [];
       if (atn.diagnostico_1) {
+        const cod = (atn.cie10_1 || 'F329').replace(/\./g, '');
         diagnosticosFua.push({
-          codigo: atn.cie10_1 || 'F32.9',
+          codigo: cod,
           descripcion: atn.diagnostico_1,
           tipo: 'D',
           tipo_ingreso: 'D',
-          cie_ingreso: atn.cie10_1 || 'F32.9',
+          cie_ingreso: cod,
           tipo_egreso: 'D',
-          cie_egreso: atn.cie10_1 || 'F32.9',
+          cie_egreso: cod,
         });
       }
       if (atn.diagnostico_2) {
+        const cod = (atn.cie10_2 || 'F411').replace(/\./g, '');
         diagnosticosFua.push({
-          codigo: atn.cie10_2 || 'F41.1',
+          codigo: cod,
           descripcion: atn.diagnostico_2,
           tipo: 'D',
           tipo_ingreso: 'D',
-          cie_ingreso: atn.cie10_2 || 'F41.1',
+          cie_ingreso: cod,
           tipo_egreso: 'D',
-          cie_egreso: atn.cie10_2 || 'F41.1',
+          cie_egreso: cod,
         });
       }
 
@@ -544,11 +549,11 @@ export const AtencionView: React.FC = () => {
     setRecetas(recetas.filter((r) => r.id !== id));
   };
 
-  const handleAddCie10 = (item: CIE10Item) => {
+  const handleAddCie10 = (item: { codigo: string; nombre?: string; descripcion?: string }) => {
     if (diagnosticos.some((d) => d.codigo === item.codigo)) return;
     setDiagnosticos([
       ...diagnosticos,
-      { codigo: item.codigo, descripcion: item.descripcion, tipo: 'DEFINITIVO' },
+      { codigo: item.codigo, descripcion: item.nombre || item.descripcion || '', tipo: 'DEFINITIVO' },
     ]);
     setCieSearch('');
   };
@@ -573,18 +578,9 @@ export const AtencionView: React.FC = () => {
       .filter(Boolean)
       .join('. ');
 
+    const procObj = catalogoProcedimientos.find((p) => p.cpms === procedimientoCPMS);
     const procedimientoTexto = procedimientoCPMS
-      ? procedimientoCPMS === '99203'
-        ? '99203 - Consulta Médica Especializada'
-        : procedimientoCPMS === '90834'
-        ? '90834 - Psicoterapia Individual (45-50 min)'
-        : procedimientoCPMS === '90837'
-        ? '90837 - Psicoterapia Individual Prolongada (60 min)'
-        : procedimientoCPMS === '96101'
-        ? '96101 - Evaluación Psicológica Integral'
-        : procedimientoCPMS === '99213'
-        ? '99213 - Consulta Médica de Seguimiento / Control'
-        : `CPMS ${procedimientoCPMS}`
+      ? `${procedimientoCPMS} - ${procObj?.descripcion || 'Procedimiento en Salud Mental'}`
       : undefined;
 
     const nuevaAtencionData = {
@@ -776,6 +772,15 @@ export const AtencionView: React.FC = () => {
                   <p className="text-[11px] text-slate-500 truncate mt-0.5">
                     {cons.profesional_nombre}
                   </p>
+                  {tienePendientes ? (
+                    <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 mt-1">
+                      ⚠️ Tiene pendiente {cons.pendientesCount} {cons.pendientesCount === 1 ? 'atención' : 'atenciones'}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Sin atenciones pendientes
+                    </p>
+                  )}
                 </div>
 
                 <div className="shrink-0 text-right">
@@ -1353,9 +1358,27 @@ export const AtencionView: React.FC = () => {
                   </h3>
                   <p className="text-xs text-slate-500">
                     Paciente: {pacienteAtendiendo?.apellidos_nombres} ({pacienteAtendiendo?.tipo_documento}:{' '}
-                    {pacienteAtendiendo?.numero_documento || pacienteAtendiendo?.codigo_temporal}) • Seguro:{' '}
-                    {pacienteAtendiendo?.seguro}
+                    {pacienteAtendiendo?.numero_documento || pacienteAtendiendo?.codigo_temporal})
                   </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[11px] font-semibold text-slate-500">Seguro actual:</span>
+                    <select
+                      value={pacienteAtendiendo?.seguro || 'SIS'}
+                      onChange={(e) => {
+                        if (pacienteAtendiendo) {
+                          updatePaciente(pacienteAtendiendo.id, { seguro: e.target.value as any });
+                        }
+                      }}
+                      className="text-[11px] font-bold px-1.5 py-0.5 rounded border border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 focus:outline-none"
+                      title="Actualizar seguro si cambió o se canceló el SIS del paciente"
+                    >
+                      <option value="SIS">SIS (Asegurado)</option>
+                      <option value="ESSALUD">EsSalud</option>
+                      <option value="PARTICULAR">Particular / Pagante</option>
+                      <option value="SOAT">SOAT</option>
+                      <option value="OTRO">Otro</option>
+                    </select>
+                  </div>
                 </div>
               </div>
               <button
@@ -1505,29 +1528,34 @@ export const AtencionView: React.FC = () => {
                     type="text"
                     value={cieSearch}
                     onChange={(e) => setCieSearch(e.target.value)}
-                    placeholder="Buscar diagnóstico CIE-10 por código o nombre (ej. F32, F41, Depresión, Ansiedad)..."
+                    placeholder="Buscar diagnóstico CIE-10 por código sin puntos (ej. F320, F411) o descripción..."
                     className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500"
                   />
-                  {cieSearch && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
-                      {CIE10_COMUNES.filter(
-                        (c) =>
-                          c.codigo.toLowerCase().includes(cieSearch.toLowerCase()) ||
-                          c.descripcion.toLowerCase().includes(cieSearch.toLowerCase())
-                      ).map((item) => (
-                        <div
-                          key={item.codigo}
-                          onClick={() => handleAddCie10(item)}
-                          className="p-2 text-xs hover:bg-teal-50 dark:hover:bg-slate-700 cursor-pointer flex justify-between"
-                        >
-                          <span className="font-bold text-teal-700 dark:text-teal-300">
-                            {item.codigo}
-                          </span>
-                          <span className="text-slate-600 dark:text-slate-300">
-                            {item.descripcion}
-                          </span>
-                        </div>
-                      ))}
+                  {cieSearch.trim().length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-20 max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
+                      {catalogoDiagnosticos
+                        .filter((c) => {
+                          const queryClean = cieSearch.toLowerCase().replace(/[\.\s]/g, '');
+                          const queryText = cieSearch.toLowerCase().trim();
+                          const codClean = (c.codigo || '').toLowerCase().replace(/[\.\s]/g, '');
+                          const nomText = (c.nombre || '').toLowerCase();
+                          return codClean.includes(queryClean) || nomText.includes(queryText);
+                        })
+                        .slice(0, 40)
+                        .map((item) => (
+                          <div
+                            key={item.codigo}
+                            onClick={() => handleAddCie10(item)}
+                            className="p-2.5 text-xs hover:bg-teal-50 dark:hover:bg-slate-700 cursor-pointer flex items-center justify-between gap-3"
+                          >
+                            <span className="font-mono font-bold text-teal-700 dark:text-teal-300 shrink-0">
+                              {item.codigo}
+                            </span>
+                            <span className="text-slate-700 dark:text-slate-200 text-left flex-1">
+                              {item.nombre}
+                            </span>
+                          </div>
+                        ))}
                     </div>
                   )}
                 </div>
@@ -1588,7 +1616,7 @@ export const AtencionView: React.FC = () => {
               {/* 4. Procedimientos CPMS */}
               <div className="space-y-2">
                 <label className="block text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
-                  4. Procedimiento CPMS Aplicado
+                  4. Procedimiento CPMS Aplicado (Catálogo Oficial)
                 </label>
                 <select
                   value={procedimientoCPMS}
@@ -1596,11 +1624,11 @@ export const AtencionView: React.FC = () => {
                   className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500"
                 >
                   <option value="">-- Sin procedimiento o seleccionar procedimiento realizado --</option>
-                  <option value="99203">99203 - Consulta Médica Especializada</option>
-                  <option value="90834">90834 - Psicoterapia Individual (45-50 min)</option>
-                  <option value="90837">90837 - Psicoterapia Individual Prolongada (60 min)</option>
-                  <option value="96101">96101 - Evaluación Psicológica Integral</option>
-                  <option value="99213">99213 - Consulta Médica de Seguimiento / Control</option>
+                  {catalogoProcedimientos.map((proc) => (
+                    <option key={proc.cpms} value={proc.cpms}>
+                      {proc.cpms} - {proc.descripcion}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -1662,7 +1690,11 @@ export const AtencionView: React.FC = () => {
                 </div>
 
                 {/* Recetas agregadas */}
-                {recetas.length > 0 && (
+                {recetas.length === 0 ? (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 text-slate-400 text-xs text-center">
+                    En blanco. Si la consulta amerita prescripción farmacológica, seleccione el medicamento y presione el botón (+).
+                  </div>
+                ) : (
                   <div className="space-y-1.5">
                     {recetas.map((r) => (
                       <div

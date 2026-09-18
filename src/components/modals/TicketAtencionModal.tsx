@@ -15,6 +15,7 @@ import {
   AlertCircle,
   MapPin,
   ShieldCheck,
+  ExternalLink,
 } from 'lucide-react';
 
 interface TicketAtencionModalProps {
@@ -53,7 +54,167 @@ export const TicketAtencionModal: React.FC<TicketAtencionModalProps> = ({
   });
 
   const handlePrint = () => {
-    window.print();
+    const printContent = document.getElementById('ticket-imprimible');
+    if (!printContent) {
+      window.print();
+      return;
+    }
+
+    // Crear iframe aislado para imprimir directamente el documento del ticket sin conflictos de CSS/modal
+    let printIframe = document.getElementById('ticket-print-iframe') as HTMLIFrameElement;
+    if (!printIframe) {
+      printIframe = document.createElement('iframe');
+      printIframe.id = 'ticket-print-iframe';
+      printIframe.style.position = 'fixed';
+      printIframe.style.right = '0';
+      printIframe.style.bottom = '0';
+      printIframe.style.width = '0';
+      printIframe.style.height = '0';
+      printIframe.style.border = '0';
+      document.body.appendChild(printIframe);
+    }
+
+    const doc = printIframe.contentWindow?.document || printIframe.contentDocument;
+    if (!doc) {
+      window.print();
+      return;
+    }
+
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charset="utf-8" />
+          <title>Ticket - ${numeroTicket}</title>
+          <style>
+            @page {
+              size: 80mm auto;
+              margin: 0;
+            }
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              margin: 0;
+              padding: 3mm 4mm;
+              background: #ffffff !important;
+              color: #000000 !important;
+              width: 78mm;
+              max-width: 78mm;
+              font-size: 11px;
+              line-height: 1.35;
+            }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .font-bold { font-weight: bold; }
+            .font-extrabold { font-weight: 800; }
+            .font-black { font-weight: 900; }
+            .font-medium { font-weight: 500; }
+            .font-semibold { font-weight: 600; }
+            .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+            .uppercase { text-transform: uppercase; }
+            .italic { font-style: italic; }
+            .border-b { border-bottom: 1px dashed #64748b; }
+            .border-t { border-top: 1px dashed #64748b; }
+            .border-dashed { border-style: dashed; }
+            .my-1 { margin-top: 4px; margin-bottom: 4px; }
+            .my-2 { margin-top: 8px; margin-bottom: 8px; }
+            .my-3 { margin-top: 10px; margin-bottom: 10px; }
+            .py-2 { padding-top: 6px; padding-bottom: 6px; }
+            .py-2\\.5 { padding-top: 8px; padding-bottom: 8px; }
+            .py-3 { padding-top: 10px; padding-bottom: 10px; }
+            .pb-3 { padding-bottom: 8px; }
+            .pt-2 { padding-top: 6px; }
+            .pt-3 { padding-top: 8px; }
+            .p-2\\.5 { padding: 8px; }
+            .p-5 { padding: 10px; }
+            .flex { display: flex; }
+            .justify-between { justify-content: space-between; }
+            .justify-center { justify-content: center; }
+            .items-center { align-items: center; }
+            .items-start { align-items: flex-start; }
+            .gap-1 { gap: 4px; }
+            .gap-2 { gap: 6px; }
+            .space-y-1 > * + * { margin-top: 4px; }
+            .space-y-1\\.5 > * + * { margin-top: 5px; }
+            .rounded-md { border-radius: 4px; }
+            .rounded-lg { border-radius: 6px; }
+            .rounded-xl { border-radius: 8px; }
+            .rounded-full { border-radius: 9999px; }
+            .bg-slate-900 { background-color: #0f172a !important; color: #ffffff !important; }
+            .bg-slate-50 { background-color: #f8fafc; border: 1px solid #e2e8f0; }
+            .text-teal-900 { color: #134e4a !important; }
+            .text-teal-800 { color: #115e59 !important; }
+            .text-teal-700 { color: #0f766e !important; }
+            .bg-teal-100 { background-color: #ccfbf1; color: #115e59 !important; }
+            .text-slate-900 { color: #0f172a !important; }
+            .text-slate-800 { color: #1e293b !important; }
+            .text-slate-700 { color: #334155 !important; }
+            .text-slate-600 { color: #475569 !important; }
+            .text-slate-500 { color: #64748b !important; }
+            .text-slate-400 { color: #94a3b8 !important; }
+            .text-white { color: #ffffff !important; }
+            .text-amber-600 { color: #d97706 !important; }
+            img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+            ul { margin: 0; padding-left: 14px; }
+            li { margin-bottom: 2px; }
+            .h-10 { height: 40px; }
+            .h-9 { height: 36px; }
+            .w-auto { width: auto; }
+            .h-full { height: 100%; }
+            .bg-black { background-color: #000000 !important; }
+            .inline-block { display: inline-block; }
+          </style>
+        </head>
+        <body>
+          ${printContent.innerHTML}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+      try {
+        printIframe.contentWindow?.focus();
+        printIframe.contentWindow?.print();
+      } catch (err) {
+        console.warn('Fallo impresión por iframe, ejecutando window.print fallback:', err);
+        window.print();
+      }
+    }, 350);
+  };
+
+  const handleAbrirVentanaImpresion = () => {
+    const printContent = document.getElementById('ticket-imprimible');
+    if (!printContent) return;
+    const ventana = window.open('', '_blank', 'width=440,height=680');
+    if (ventana) {
+      ventana.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>Ticket - ${numeroTicket}</title>
+            <style>
+              body { font-family: sans-serif; margin: 10px auto; width: 80mm; font-size: 11px; }
+              img { max-width: 100%; }
+              @media print { body { width: 80mm; margin: 0; } }
+            </style>
+          </head>
+          <body>
+            ${printContent.innerHTML}
+            <script>
+              window.onload = function() { window.print(); };
+            <\/script>
+          </body>
+        </html>
+      `);
+      ventana.document.close();
+    }
   };
 
   const handleCopiarResumen = () => {
@@ -291,8 +452,17 @@ Indicación: Presentarse 15 min antes con DNI físico y pasar primero por Triaje
 
           <div className="flex items-center gap-2">
             <button
+              onClick={handleAbrirVentanaImpresion}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-750 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl cursor-pointer transition-colors"
+              title="Abrir en ventana independiente para imprimir"
+            >
+              <ExternalLink size={14} />
+              <span>Abrir Ventana</span>
+            </button>
+
+            <button
               onClick={onClose}
-              className="px-3.5 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl cursor-pointer transition-colors"
+              className="px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl cursor-pointer transition-colors"
             >
               Cerrar
             </button>
@@ -307,30 +477,28 @@ Indicación: Presentarse 15 min antes con DNI físico y pasar primero por Triaje
           </div>
         </div>
 
-        {/* ESTILOS DE IMPRESIÓN AISLADA PARA TICKET */}
+        {/* ESTILOS DE IMPRESIÓN DIRECTA / FALLBACK */}
         <style>{`
           @media print {
-            body * {
-              visibility: hidden;
+            body {
+              background: #ffffff !important;
+              color: #000000 !important;
             }
-            #ticket-imprimible, #ticket-imprimible * {
-              visibility: visible;
+            .print\\:hidden {
+              display: none !important;
             }
             #ticket-imprimible {
-              position: absolute;
-              left: 0;
-              top: 0;
               width: 80mm !important;
-              max-width: 100% !important;
-              padding: 4mm !important;
+              max-width: 80mm !important;
               margin: 0 auto !important;
+              padding: 2mm !important;
               border: none !important;
               box-shadow: none !important;
-              background: #fff !important;
-              color: #000 !important;
+              background: #ffffff !important;
+              color: #000000 !important;
             }
             @page {
-              size: auto;
+              size: 80mm auto;
               margin: 0;
             }
           }

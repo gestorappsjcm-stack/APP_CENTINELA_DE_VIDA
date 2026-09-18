@@ -17,15 +17,30 @@ import {
   Ticket,
   Printer,
   ShieldCheck,
+  FastForward,
+  UserMinus,
+  Sparkles,
 } from 'lucide-react';
 import { TicketAtencionModal } from '../modals/TicketAtencionModal';
 
 export const AgendaView: React.FC = () => {
-  const { citas, pacientes, profesionales, addCita, updatePaciente, confirmarCita, cancelarCita, setCurrentTab } = useApp();
+  const {
+    citas,
+    pacientes,
+    profesionales,
+    addCita,
+    updatePaciente,
+    confirmarCita,
+    cancelarCita,
+    adelantarCita,
+    liberarCupo,
+    setCurrentTab,
+  } = useApp();
 
   const [filtroFecha, setFiltroFecha] = useState<string>(new Date().toISOString().split('T')[0]);
   const [filtroEstado, setFiltroEstado] = useState<string>('');
   const [filtroProf, setFiltroProf] = useState<string>('');
+  const [filtroVista, setFiltroVista] = useState<'dia' | 'proximas' | 'todas'>('dia');
 
   // Modal Nueva Cita
   const [isModalNuevaCita, setIsModalNuevaCita] = useState(false);
@@ -48,13 +63,66 @@ export const AgendaView: React.FC = () => {
   const [cancelingCitaId, setCancelingCitaId] = useState<string | null>(null);
   const [motivoCancelacion, setMotivoCancelacion] = useState('');
 
-  // Filtrado de citas
-  const citasFiltradas = citas.filter((c) => {
-    if (filtroFecha && c.fecha_cita !== filtroFecha) return false;
-    if (filtroEstado && c.estado !== filtroEstado) return false;
-    if (filtroProf && c.profesional_id !== filtroProf) return false;
-    return true;
-  });
+  // Modal Adelantar Cita
+  const [adelantarCitaModal, setAdelantarCitaModal] = useState<Cita | null>(null);
+  const [adelantarFecha, setAdelantarFecha] = useState(new Date().toISOString().split('T')[0]);
+  const [adelantarHora, setAdelantarHora] = useState('09:00');
+  const [adelantarPasarATriaje, setAdelantarPasarATriaje] = useState(true);
+
+  // Modal Liberar Cupo
+  const [liberarCupoModal, setLiberarCupoModal] = useState<Cita | null>(null);
+  const [motivoLiberacion, setMotivoLiberacion] = useState('Paciente no se presentó / Cupo liberado para nueva atención');
+
+  // Búsqueda rápida por paciente / DNI / N° de ticket
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Función de normalización de fecha YYYY-MM-DD
+  const normalizarFecha = (f?: string) => {
+    if (!f) return '';
+    const clean = f.split('T')[0].split(' ')[0].trim();
+    if (clean.includes('/')) {
+      const parts = clean.split('/');
+      if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    return clean;
+  };
+
+  const hoyStr = new Date().toISOString().split('T')[0];
+
+  // Filtrado robusto de citas (incluye re-citados y búsqueda global)
+  const citasFiltradas = citas
+    .filter((c) => {
+      const pac = pacientes.find((p) => p.id === c.paciente_id);
+      const fechaNorm = normalizarFecha(c.fecha_cita);
+
+      // Búsqueda rápida por texto (si escribe, busca en todo el historial y futuras)
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase().trim();
+        const matchPac = pac?.apellidos_nombres?.toLowerCase().includes(q);
+        const matchDoc = (pac?.numero_documento || pac?.codigo_temporal || '').toLowerCase().includes(q);
+        const matchTicket = (c.numero_ticket || '').toLowerCase().includes(q);
+        const matchMotivo = (c.motivo_consulta || '').toLowerCase().includes(q);
+        if (!matchPac && !matchDoc && !matchTicket && !matchMotivo) {
+          return false;
+        }
+      } else {
+        if (filtroVista === 'dia') {
+          if (filtroFecha && fechaNorm !== filtroFecha) return false;
+        } else if (filtroVista === 'proximas') {
+          if (fechaNorm < hoyStr) return false;
+        }
+      }
+
+      if (filtroEstado && c.estado !== filtroEstado) return false;
+      if (filtroProf && c.profesional_id !== filtroProf) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const fA = normalizarFecha(a.fecha_cita) + ' ' + (a.hora_cita || '00:00');
+      const fB = normalizarFecha(b.fecha_cita) + ' ' + (b.hora_cita || '00:00');
+      return fA.localeCompare(fB);
+    });
 
   const handleCrearCita = (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,6 +168,19 @@ export const AgendaView: React.FC = () => {
     }
   };
 
+  const handleConfirmarAdelanto = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adelantarCitaModal) return;
+    adelantarCita(adelantarCitaModal.id, adelantarFecha, adelantarHora, adelantarPasarATriaje);
+    setAdelantarCitaModal(null);
+  };
+
+  const handleConfirmarLiberarCupo = () => {
+    if (!liberarCupoModal) return;
+    liberarCupo(liberarCupoModal.id, motivoLiberacion.trim() || 'Cupo liberado para nueva atención');
+    setLiberarCupoModal(null);
+  };
+
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-6">
       {/* Header */}
@@ -113,13 +194,16 @@ export const AgendaView: React.FC = () => {
               Agenda de Citas y Turnos
             </h2>
             <p className="text-xs md:text-sm text-slate-500">
-              Control diario y programación de citas ambulatorias y triaje
+              Control diario, programación de próximas citas, adelanto de turnos y liberación de cupos
             </p>
           </div>
         </div>
 
         <button
-          onClick={() => setIsModalNuevaCita(true)}
+          onClick={() => {
+            setCitaFecha(filtroFecha || hoyStr);
+            setIsModalNuevaCita(true);
+          }}
           className="flex items-center gap-2 bg-[#1A2B4A] hover:bg-[#243b5e] text-white px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer shadow-md transition-all self-start md:self-auto"
         >
           <Plus size={16} />
@@ -127,16 +211,87 @@ export const AgendaView: React.FC = () => {
         </button>
       </div>
 
-      {/* Toolbar Filtros */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div>
+      {/* Selector de Rango de Vista */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-100 dark:bg-slate-850 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-750">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              setFiltroVista('dia');
+              setFiltroFecha(hoyStr);
+            }}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              filtroVista === 'dia'
+                ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            📅 Por Fecha Seleccionada
+          </button>
+          <button
+            onClick={() => setFiltroVista('proximas')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              filtroVista === 'proximas'
+                ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            <span>⏭️ Próximas Citas y Re-citados</span>
+            <span className="bg-teal-100 text-teal-800 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+              {citas.filter((c) => normalizarFecha(c.fecha_cita) >= hoyStr && c.estado !== 'CANCELADA').length}
+            </span>
+          </button>
+          <button
+            onClick={() => setFiltroVista('todas')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              filtroVista === 'todas'
+                ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            📋 Todas las Citas ({citas.length})
+          </button>
+        </div>
+
+        {filtroVista === 'dia' && (
+          <div className="flex items-center gap-2 px-2">
+            <span className="text-xs text-slate-500 font-semibold">Fecha:</span>
             <input
               type="date"
               value={filtroFecha}
               onChange={(e) => setFiltroFecha(e.target.value)}
-              className="text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none cursor-pointer"
+              className="text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none cursor-pointer font-bold"
             />
+            <button
+              onClick={() => setFiltroFecha(hoyStr)}
+              className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded-lg font-bold cursor-pointer"
+            >
+              Hoy
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Toolbar Filtros Estado / Profesional / Búsqueda */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
+          {/* Campo de búsqueda rápida */}
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search className="absolute left-3 top-2.5 text-slate-400" size={14} />
+            <input
+              type="text"
+              placeholder="Buscar por paciente, DNI o N° ticket..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-500 font-medium"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
 
           <select
@@ -165,19 +320,8 @@ export const AgendaView: React.FC = () => {
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setFiltroFecha(new Date().toISOString().split('T')[0])}
-            className="text-xs bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg font-semibold cursor-pointer"
-          >
-            📅 Hoy
-          </button>
-          <button
-            onClick={() => setFiltroFecha('')}
-            className="text-xs bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg font-semibold cursor-pointer"
-          >
-            Todas
-          </button>
+        <div className="text-xs text-slate-500">
+          Mostrando <strong>{citasFiltradas.length}</strong> citas
         </div>
       </div>
 
@@ -193,7 +337,7 @@ export const AgendaView: React.FC = () => {
                 <th className="py-3 px-3">Profesional Asignado</th>
                 <th className="py-3 px-3">Tipo</th>
                 <th className="py-3 px-3 text-center">Estado</th>
-                <th className="py-3 px-3">Motivo</th>
+                <th className="py-3 px-3">Motivo / Cupo</th>
                 <th className="py-3 px-4 text-center">Acciones</th>
               </tr>
             </thead>
@@ -219,6 +363,7 @@ export const AgendaView: React.FC = () => {
                       : 'bg-rose-100 text-rose-800 dark:bg-rose-900/30';
 
                   const ticketCode = c.numero_ticket || `TKT-${c.id.replace('cita-', '').slice(-6)}`;
+                  const esFechaFutura = normalizarFecha(c.fecha_cita) > hoyStr;
 
                   return (
                     <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-750/50 transition-colors">
@@ -230,7 +375,7 @@ export const AgendaView: React.FC = () => {
                             setIsTicketModalOpen(true);
                           }}
                           className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 text-blue-700 dark:text-blue-300 rounded-lg font-mono font-bold text-xs border border-blue-200 dark:border-blue-800 transition-colors cursor-pointer"
-                          title="Click para ver e imprimir Ticket"
+                          title="Click para ver e imprimir Ticket oficial"
                         >
                           <Ticket size={13} className="text-blue-600 dark:text-blue-400" />
                           <span>{ticketCode}</span>
@@ -241,13 +386,28 @@ export const AgendaView: React.FC = () => {
                         <div className="font-bold text-slate-900 dark:text-white">
                           {paciente?.apellidos_nombres || 'Paciente no identificado'}
                         </div>
-                        <div className="text-[11px] text-slate-400 font-mono">
-                          {paciente?.tipo_documento}: {paciente?.numero_documento || paciente?.codigo_temporal} • Seguro: {c.seguro_cita || paciente?.seguro || 'SIS'}
+                        <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2">
+                          <span>{paciente?.tipo_documento}: {paciente?.numero_documento || paciente?.codigo_temporal}</span>
+                          <span>•</span>
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                            (c.seguro_cita || paciente?.seguro || '').toUpperCase().includes('SIS')
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                              : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                          }`}>
+                            Seguro: {c.seguro_cita || paciente?.seguro || 'SIS'}
+                          </span>
                         </div>
                       </td>
 
                       <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-200">
-                        <div>{c.fecha_cita}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span>{normalizarFecha(c.fecha_cita)}</span>
+                          {esFechaFutura && (
+                            <span className="text-[9px] bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 font-bold px-1.5 py-0.2 rounded">
+                              Re-citado
+                            </span>
+                          )}
+                        </div>
                         <div className="text-teal-600 dark:text-teal-400 font-bold">{c.hora_cita}</div>
                       </td>
 
@@ -273,7 +433,8 @@ export const AgendaView: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1">
+                          {/* Ticket */}
                           <button
                             onClick={() => {
                               setSelectedCitaTicket(c);
@@ -283,35 +444,67 @@ export const AgendaView: React.FC = () => {
                             title="Ver e Imprimir Ticket de Atención"
                             className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg cursor-pointer transition-colors"
                           >
-                            <Ticket size={16} />
+                            <Ticket size={15} />
                           </button>
 
-                          {c.estado === 'PENDIENTE' && (
+                          {/* Adelantar Cita */}
+                          {c.estado !== 'ATENDIDA' && c.estado !== 'CANCELADA' && (
                             <button
-                              onClick={() => confirmarCita(c.id)}
-                              title="Confirmar asistencia"
-                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer transition-colors"
+                              onClick={() => {
+                                setAdelantarCitaModal(c);
+                                setAdelantarFecha(hoyStr);
+                                setAdelantarHora(new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }));
+                              }}
+                              title="Adelantar fecha/hora de esta cita"
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-lg cursor-pointer transition-colors"
                             >
-                              <CheckCircle size={16} />
+                              <FastForward size={15} />
                             </button>
                           )}
 
+                          {/* Liberar Cupo */}
+                          {c.estado !== 'ATENDIDA' && c.estado !== 'CANCELADA' && (
+                            <button
+                              onClick={() => {
+                                setLiberarCupoModal(c);
+                                setMotivoLiberacion('Paciente no asistió / Cupo liberado para nueva atención');
+                              }}
+                              title="Liberar cupo para nueva atención"
+                              className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg cursor-pointer transition-colors"
+                            >
+                              <UserMinus size={15} />
+                            </button>
+                          )}
+
+                          {/* Confirmar Asistencia */}
+                          {c.estado === 'PENDIENTE' && (
+                            <button
+                              onClick={() => confirmarCita(c.id)}
+                              title="Confirmar asistencia (Llegó al establecimiento)"
+                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer transition-colors"
+                            >
+                              <CheckCircle size={15} />
+                            </button>
+                          )}
+
+                          {/* Cancelar Cita */}
                           {c.estado !== 'ATENDIDA' && c.estado !== 'CANCELADA' && (
                             <button
                               onClick={() => setCancelingCitaId(c.id)}
                               title="Cancelar cita"
                               className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
                             >
-                              <XCircle size={16} />
+                              <XCircle size={15} />
                             </button>
                           )}
 
+                          {/* Ir a atención médica */}
                           <button
                             onClick={() => setCurrentTab('atencion')}
-                            title="Ir a atención médica"
+                            title="Ir al consultorio de atención clínica"
                             className="p-1.5 text-teal-600 hover:bg-teal-50 rounded-lg cursor-pointer transition-colors"
                           >
-                            <Stethoscope size={16} />
+                            <Stethoscope size={15} />
                           </button>
                         </div>
                       </td>
@@ -323,6 +516,165 @@ export const AgendaView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Modal Adelantar Cita */}
+      {adelantarCitaModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4 border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-sm">
+                <FastForward size={18} />
+                <span>Adelantar Cita Programada</span>
+              </div>
+              <button
+                onClick={() => setAdelantarCitaModal(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 rounded-xl text-xs space-y-1">
+              <p className="font-bold text-indigo-900 dark:text-indigo-200">
+                {pacientes.find((p) => p.id === adelantarCitaModal.paciente_id)?.apellidos_nombres}
+              </p>
+              <p className="text-indigo-700 dark:text-indigo-300 text-[11px]">
+                Cita actual: {normalizarFecha(adelantarCitaModal.fecha_cita)} a las {adelantarCitaModal.hora_cita}
+              </p>
+            </div>
+
+            <form onSubmit={handleConfirmarAdelanto} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Nueva Fecha de Atención *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={adelantarFecha}
+                  onChange={(e) => setAdelantarFecha(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Nueva Hora de Atención *
+                </label>
+                <input
+                  type="time"
+                  required
+                  value={adelantarHora}
+                  onChange={(e) => setAdelantarHora(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 p-3 bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 rounded-xl cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={adelantarPasarATriaje}
+                  onChange={(e) => setAdelantarPasarATriaje(e.target.checked)}
+                  className="rounded text-teal-600 focus:ring-teal-500 w-4 h-4"
+                />
+                <span className="text-[11px] font-semibold text-teal-900 dark:text-teal-200">
+                  Confirmar llegada y pasar a Triaje inmediatamente (atención hoy)
+                </span>
+              </label>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setAdelantarCitaModal(null)}
+                  className="px-3 py-1.5 font-semibold text-slate-500 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md cursor-pointer"
+                >
+                  Confirmar Adelanto de Cita
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Liberar Cupo */}
+      {liberarCupoModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4 border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-2 text-amber-600 font-bold text-sm">
+                <UserMinus size={18} />
+                <span>Liberar Cupo de Atención</span>
+              </div>
+              <button
+                onClick={() => setLiberarCupoModal(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-3 bg-amber-50/80 dark:bg-amber-950/40 rounded-xl text-xs space-y-1">
+              <p className="font-bold text-amber-900 dark:text-amber-200">
+                Paciente: {pacientes.find((p) => p.id === liberarCupoModal.paciente_id)?.apellidos_nombres}
+              </p>
+              <p className="text-amber-800 dark:text-amber-300 text-[11px]">
+                Slot reservado: {normalizarFecha(liberarCupoModal.fecha_cita)} - {liberarCupoModal.hora_cita}
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Al liberar el cupo, la cita quedará cancelada con el motivo indicado y el horario quedará habilitado para programar a un nuevo paciente.
+            </p>
+
+            <div className="space-y-2 text-xs">
+              <label className="block font-semibold text-slate-700 dark:text-slate-300">
+                Motivo de Liberación del Cupo:
+              </label>
+              <select
+                value={motivoLiberacion}
+                onChange={(e) => setMotivoLiberacion(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer"
+              >
+                <option value="Paciente no se presentó / Cupo liberado para nueva atención">
+                  Paciente no se presentó / Inasistencia
+                </option>
+                <option value="Paciente se retiró del establecimiento sin continuar la atención">
+                  Paciente se retiró del establecimiento sin continuar atención
+                </option>
+                <option value="Paciente adelantó o reprogramó su cita">
+                  Paciente adelantó o reprogramó su cita
+                </option>
+                <option value="Cupo liberado por admisión para caso prioritario">
+                  Cupo liberado por admisión para caso prioritario
+                </option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setLiberarCupoModal(null)}
+                className="px-3 py-1.5 font-semibold text-slate-500 hover:bg-slate-100 rounded-lg text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmarLiberarCupo}
+                className="px-4 py-2 font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-md cursor-pointer text-xs"
+              >
+                Liberar Cupo Ahora
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Programar Nueva Cita */}
       {isModalNuevaCita && (

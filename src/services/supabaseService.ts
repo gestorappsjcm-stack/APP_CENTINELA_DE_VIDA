@@ -279,7 +279,34 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return false;
     try {
-      const { error } = await client.from('cv_citas').insert([cita]);
+      const payload: Record<string, any> = {
+        paciente_id: cita.paciente_id,
+        fecha_cita: cita.fecha_cita ? cita.fecha_cita.split('T')[0] : cita.fecha_cita,
+        hora_cita: cita.hora_cita,
+        tipo_cita: cita.tipo_cita || 'CONSULTA',
+        estado: cita.estado || 'PENDIENTE',
+        motivo_consulta: cita.motivo_consulta || null,
+        seguro_cita: cita.seguro_cita || 'SIS',
+      };
+      if (cita.profesional_id) payload.profesional_id = cita.profesional_id;
+      if (cita.observaciones) payload.observaciones = cita.observaciones;
+      if (cita.numero_ticket) payload.numero_ticket = cita.numero_ticket;
+
+      const { data, error } = await client.from('cv_citas').insert([payload]).select();
+      if (!error && data && data[0]?.id) {
+        cita.id = String(data[0].id);
+        return true;
+      }
+      if (error) {
+        // Fallback con los campos estrictamente esenciales
+        const { error: err2 } = await client.from('cv_citas').insert([{
+          paciente_id: cita.paciente_id,
+          fecha_cita: cita.fecha_cita ? cita.fecha_cita.split('T')[0] : cita.fecha_cita,
+          hora_cita: cita.hora_cita,
+          estado: cita.estado || 'PENDIENTE',
+        }]);
+        return !err2;
+      }
       return !error;
     } catch (err) {
       console.warn('Error insertando cita en Supabase:', err);
@@ -291,7 +318,16 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return false;
     try {
-      const { error } = await client.from('cv_citas').update(data).eq('id', id);
+      const updatePayload: Record<string, any> = {};
+      if (data.estado !== undefined) updatePayload.estado = data.estado;
+      if (data.fecha_cita !== undefined) updatePayload.fecha_cita = data.fecha_cita.split('T')[0];
+      if (data.hora_cita !== undefined) updatePayload.hora_cita = data.hora_cita;
+      if (data.observaciones !== undefined) updatePayload.observaciones = data.observaciones;
+      if (data.seguro_cita !== undefined) updatePayload.seguro_cita = data.seguro_cita;
+      if (data.triaje_completado !== undefined) updatePayload.triaje_completado = data.triaje_completado;
+      if (data.atencion_completada !== undefined) updatePayload.atencion_completada = data.atencion_completada;
+
+      const { error } = await client.from('cv_citas').update(updatePayload).eq('id', id);
       return !error;
     } catch (err) {
       console.warn('Error actualizando cita en Supabase:', err);
@@ -668,5 +704,73 @@ export const supabaseService = {
       console.warn('No se pudo actualizar fua_id en cv_atenciones:', err);
       return false;
     }
+  },
+
+  // 10. CATALOGOS OFICIALES: diagnosticospico y pac_procedimientos (SIN PUNTOS EN CÓDIGOS)
+  async getDiagnosticosPsico(): Promise<Array<{ codigo: string; nombre: string; sexo?: string; condicion_materna?: string; percapita?: string }> | null> {
+    const client = getSupabase();
+    if (!client) return null;
+    try {
+      // 1. Intentar tabla principal diagnosticospico
+      let { data, error } = await client
+        .from('diagnosticospico')
+        .select('*')
+        .order('codigo', { ascending: true });
+
+      // 2. Si falla o no existe, intentar tablas alternativas posibles
+      if (error || !data || data.length === 0) {
+        const altQuery = await client.from('diagnosticos').select('*').limit(500);
+        if (!altQuery.error && altQuery.data && altQuery.data.length > 0) {
+          data = altQuery.data;
+          error = null;
+        }
+      }
+
+      if (!error && data && data.length > 0) {
+        return data.map((d: any) => ({
+          codigo: String(d.codigo || d.cie10 || '').replace(/\./g, '').trim(),
+          nombre: String(d.nombre || d.descripcion || '').trim(),
+          sexo: d['Sexo:_Ambos_A_Hombre_H_Mujer_M_'] || d.sexo || 'A',
+          condicion_materna: d.condicion_materna,
+          percapita: d.percapita,
+        }));
+      }
+    } catch (err) {
+      console.warn('Error al obtener diagnosticospico de Supabase:', err);
+    }
+    return null;
+  },
+
+  async getProcedimientos(): Promise<Array<{ cpms: string; descripcion: string; estrategia_sis?: string; condicion?: string }> | null> {
+    const client = getSupabase();
+    if (!client) return null;
+    try {
+      // 1. Intentar tabla principal pac_procedimientos
+      let { data, error } = await client
+        .from('pac_procedimientos')
+        .select('*')
+        .order('cpms', { ascending: true });
+
+      // 2. Si falla o no existe, intentar tablas alternativas posibles
+      if (error || !data || data.length === 0) {
+        const altQuery = await client.from('procedimientos').select('*').limit(500);
+        if (!altQuery.error && altQuery.data && altQuery.data.length > 0) {
+          data = altQuery.data;
+          error = null;
+        }
+      }
+
+      if (!error && data && data.length > 0) {
+        return data.map((p: any) => ({
+          cpms: String(p.cpms || p.codigo || '').replace(/\./g, '').trim(),
+          descripcion: String(p.descripcion || p.nombre || '').trim(),
+          estrategia_sis: p.estrategia_sis || p.estrategia,
+          condicion: p.condicion,
+        }));
+      }
+    } catch (err) {
+      console.warn('Error al obtener pac_procedimientos de Supabase:', err);
+    }
+    return null;
   },
 };

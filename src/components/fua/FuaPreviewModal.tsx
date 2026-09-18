@@ -81,17 +81,26 @@ export const FuaPreviewModal: React.FC<FuaPreviewModalProps> = ({ fua, onClose }
   const diags = rawDiags.map((d: any) => {
     if (typeof d === 'string') {
       const parts = (d as string).split(':');
+      const cod = (parts[0]?.trim() || 'F329').replace(/\./g, '');
       return {
-        codigo: parts[0]?.trim() || 'F32.9',
+        codigo: cod,
         descripcion: parts[1]?.trim() || d,
         tipo: 'D',
         tipo_ingreso: 'D',
-        cie_ingreso: parts[0]?.trim() || 'F32.9',
+        cie_ingreso: cod,
         tipo_egreso: 'D',
-        cie_egreso: parts[0]?.trim() || 'F32.9',
+        cie_egreso: cod,
       };
     }
-    return d || { codigo: 'F32.9', descripcion: 'DIAGNÓSTICO', tipo: 'D' };
+    const cleanCod = (d?.codigo || 'F329').replace(/\./g, '');
+    return d
+      ? {
+          ...d,
+          codigo: cleanCod,
+          cie_ingreso: (d.cie_ingreso || cleanCod).replace(/\./g, ''),
+          cie_egreso: (d.cie_egreso || cleanCod).replace(/\./g, ''),
+        }
+      : { codigo: 'F329', descripcion: 'DIAGNÓSTICO', tipo: 'D' };
   });
   const nDiags = diags.length;
 

@@ -16,6 +16,7 @@ import {
   Database,
   RefreshCw,
   Server,
+  Clock,
 } from 'lucide-react';
 
 export const DashboardView: React.FC = () => {
@@ -25,6 +26,8 @@ export const DashboardView: React.FC = () => {
     citas,
     atenciones,
     profesionales,
+    consultorios,
+    triajes,
     setCurrentTab,
     setActiveModal,
     canAccess,
@@ -46,6 +49,22 @@ export const DashboardView: React.FC = () => {
     supabaseLiveStats?.citasPendientes ?? citas.filter((c) => c.estado === 'PENDIENTE').length;
   const profesionalesActivos =
     supabaseLiveStats?.profesionalesActivos ?? profesionales.filter((p) => p.estado === 'ACTIVO').length;
+
+  // Pacientes pendientes por consultorio
+  const consultoriosConPendientes = (consultorios || []).map((cons) => {
+    const pendientes = citas.filter((cita) => {
+      if (cita.estado === 'ATENDIDA' || cita.estado === 'CANCELADA' || cita.atencion_completada) return false;
+      const tr = triajes.find((t) => t.cita_id === cita.id);
+      const asignado = cita.consultorio_id === cons.id || tr?.consultorio_id === cons.id;
+      return asignado;
+    });
+    return {
+      ...cons,
+      pendientesCount: pendientes.length,
+      pendientes,
+    };
+  });
+  const totalPendientesConsultorios = consultoriosConPendientes.reduce((acc, c) => acc + c.pendientesCount, 0);
 
   // Operaciones principales
   const operaciones = [
@@ -311,6 +330,88 @@ export const DashboardView: React.FC = () => {
           <div className="text-[11px] text-purple-600 dark:text-purple-400 font-semibold mt-2">
             En servicio
           </div>
+        </div>
+      </div>
+
+      {/* ESTADO DE CONSULTORIOS: PACIENTES PENDIENTES */}
+      <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700/60 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 rounded-xl">
+              <Clock size={18} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Pacientes Pendientes por Consultorio</span>
+                {totalPendientesConsultorios > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-white">
+                    {totalPendientesConsultorios} en espera
+                  </span>
+                )}
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Seguimiento de cola de atenciones y derivaciones activas
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setCurrentTab('atencion')}
+            className="text-xs text-[#1e3a5f] dark:text-teal-400 font-bold hover:underline cursor-pointer flex items-center gap-1 self-start sm:self-auto"
+          >
+            <span>Ir a Consultorios / Atención</span>
+            <span>&rarr;</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+          {consultoriosConPendientes.map((cons) => {
+            const hasPendientes = cons.pendientesCount > 0;
+            return (
+              <div
+                key={cons.id}
+                onClick={() => setCurrentTab('atencion')}
+                className={`p-3.5 rounded-2xl border transition-all cursor-pointer hover:shadow-md ${
+                  hasPendientes
+                    ? 'border-amber-300 dark:border-amber-700/80 bg-amber-50/60 dark:bg-amber-950/20'
+                    : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-100/50'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-black text-xs text-slate-900 dark:text-white">
+                    {cons.codigo}
+                  </span>
+                  {hasPendientes ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-white animate-pulse">
+                      {cons.pendientesCount} {cons.pendientesCount === 1 ? 'pendiente' : 'pendientes'}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                      Al día
+                    </span>
+                  )}
+                </div>
+                <div className="font-bold text-xs text-slate-800 dark:text-slate-200 mt-1.5 truncate">
+                  {cons.nombre}
+                </div>
+                <div className="text-[11px] text-slate-500 truncate">
+                  {cons.profesional_nombre}
+                </div>
+
+                <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 text-xs">
+                  {hasPendientes ? (
+                    <span className="font-bold text-amber-800 dark:text-amber-300">
+                      ⚠️ El consultorio {cons.codigo} tiene pendiente {cons.pendientesCount}{' '}
+                      {cons.pendientesCount === 1 ? 'atención' : 'atenciones'}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 font-medium text-[11px]">
+                      Sin atenciones pendientes
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

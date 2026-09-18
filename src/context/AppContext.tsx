@@ -21,6 +21,8 @@ import {
   INITIAL_TRIAJES,
   INITIAL_ATENCIONES,
   INITIAL_FUAS,
+  DIAGNOSTICOS_CIE10,
+  PROCEDIMIENTOS_CPMS,
 } from '../data/mockData';
 import { supabaseService, SupabaseDashboardStats } from '../services/supabaseService';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -79,6 +81,13 @@ interface AppContextType {
   confirmarCita: (id: string) => void;
   cancelarCita: (id: string, motivo?: string) => void;
   llamarTurno: (citaId: string, consultorioId?: string) => void;
+  reprogramarCita: (id: string, fecha: string, hora: string) => void;
+  adelantarCita: (id: string, fecha: string, hora: string, pasarATriaje?: boolean) => void;
+  liberarCupo: (id: string, motivo?: string) => { fecha: string; hora: string; consultorio_id?: string; profesional_id?: string };
+
+  // Catálogos Oficiales (Sincronizados con Supabase: diagnosticospico y pac_procedimientos)
+  catalogoDiagnosticos: Array<{ codigo: string; nombre: string; sexo?: string }>;
+  catalogoProcedimientos: Array<{ cpms: string; descripcion: string; estrategia?: string }>;
 
   // Triajes
   triajes: Triaje[];
@@ -311,6 +320,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [supabaseLiveStats, setSupabaseLiveStats] = useState<SupabaseDashboardStats | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
+  // Catálogos Oficiales (CIE-10 Salud Mental y CPMS)
+  const [catalogoDiagnosticos, setCatalogoDiagnosticos] = useState<Array<{ codigo: string; nombre: string; sexo?: string }>>(DIAGNOSTICOS_CIE10);
+  const [catalogoProcedimientos, setCatalogoProcedimientos] = useState<Array<{ cpms: string; descripcion: string; estrategia?: string }>>(PROCEDIMIENTOS_CPMS);
+
   // Sincronización con Supabase (tablas cv_* y vistas v_cv_*)
   const syncWithSupabase = async () => {
     if (!isSupabaseConfigured()) {
@@ -336,7 +349,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSupabaseMessage(conn.message);
 
       // Cargar datos en vivo desde Supabase
-      const [liveStats, supaPacientes, supaCitas, supaAtenciones, supaTriajes, supaProfesionales, supaUsuarios, supaFuas] = await Promise.all([
+      const [
+        liveStats,
+        supaPacientes,
+        supaCitas,
+        supaAtenciones,
+        supaTriajes,
+        supaProfesionales,
+        supaUsuarios,
+        supaFuas,
+        supaDiagnosticos,
+        supaProcedimientos,
+      ] = await Promise.all([
         supabaseService.getDashboardResumen(),
         supabaseService.getPacientes(),
         supabaseService.getCitas(),
@@ -345,6 +369,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         supabaseService.getProfesionales(),
         supabaseService.getUsuarios(),
         supabaseService.getFuas(),
+        supabaseService.getDiagnosticosPsico(),
+        supabaseService.getProcedimientos(),
       ]);
 
       if (liveStats) {
@@ -370,6 +396,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       if (Array.isArray(supaFuas)) {
         setFuas(supaFuas);
+      }
+      if (Array.isArray(supaDiagnosticos) && supaDiagnosticos.length > 0) {
+        setCatalogoDiagnosticos(supaDiagnosticos);
+      }
+      if (Array.isArray(supaProcedimientos) && supaProcedimientos.length > 0) {
+        setCatalogoProcedimientos(supaProcedimientos);
       }
     } catch (err: any) {
       console.warn('Error durante sincronización con Supabase:', err);
@@ -663,6 +695,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  const reprogramarCita = (id: string, fecha: string, hora: string) => {
+    setCitas((prev) =>
+      prev.map((c) =>
+        c.id === id ? { ...c, fecha_cita: fecha, hora_cita: hora, estado: 'PENDIENTE' } : c
+      )
+    );
+    if (isSupabaseConfigured()) {
+      supabaseService.updateCita(id, { fecha_cita: fecha, hora_cita: hora, estado: 'PENDIENTE' })
+        .catch((e) => console.warn('Supabase reprogramarCita error:', e));
+    }
+  };
+
+  const adelantarCita = (id: string, fecha: string, hora: string, pasarATriaje: boolean = false) => {
+    let citaActualizada: Cita | undefined;
+    setCitas((prev) =>
+      prev.map((c) => {
+        if (c.id === id) {
+          citaActualizada = { ...c, fecha_cita: fecha, hora_cita: hora, estado: 'CONFIRMADA' };
+          return citaActualizada;
+        }
+        return c;
+      })
+    );
+    if (isSupabaseConfigured()) {
+      supabaseService.updateCita(id, { fecha_cita: fecha, hora_cita: hora, estado: 'CONFIRMADA' })
+        .catch((e) => console.warn('Supabase adelantarCita error:', e));
+    }
+
+    if (pasarATriaje && citaActualizada) {
+      addTriaje({
+        paciente_id: citaActualizada.paciente_id,
+        cita_id: citaActualizada.id,
+        profesional_id: citaActualizada.profesional_id,
+        consultorio_id: citaActualizada.consultorio_id,
+        presion_arterial: '',
+        frecuencia_cardiaca: undefined,
+        frecuencia_respiratoria: undefined,
+        temperatura: undefined,
+        peso: undefined,
+        talla: undefined,
+        clasificacion_riesgo: 'VERDE',
+        motivo_consulta: 'Adelanto de cita para atención el día de hoy.',
+      });
+    }
+  };
+
+  const liberarCupo = (id: string, motivo: string = 'Cupo liberado por inasistencia / adelanto'): { fecha: string; hora: string; consultorio_id?: string; profesional_id?: string } => {
+    let slotLiberado = { fecha: '', hora: '', consultorio_id: undefined as string | undefined, profesional_id: undefined as string | undefined };
+    setCitas((prev) =>
+      prev.map((c) => {
+        if (c.id === id) {
+          slotLiberado = {
+            fecha: c.fecha_cita,
+            hora: c.hora_cita,
+            consultorio_id: c.consultorio_id,
+            profesional_id: c.profesional_id,
+          };
+          return { ...c, estado: 'CANCELADA', observaciones: motivo };
+        }
+        return c;
+      })
+    );
+    if (isSupabaseConfigured()) {
+      supabaseService.updateCita(id, { estado: 'CANCELADA', observaciones: motivo })
+        .catch((e) => console.warn('Supabase liberarCupo error:', e));
+    }
+    return slotLiberado;
+  };
+
   // TRIAJES
   const addTriaje = (data: Omit<Triaje, 'id' | 'hora_llegada' | 'estado' | 'fecha'>) => {
     const now = new Date();
@@ -728,6 +829,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Si finaliza proceso, marcar paciente inactivo
     if (data.finaliza_proceso && data.paciente_id) {
       setPacientes((prev) => prev.map((p) => (p.id === data.paciente_id ? { ...p, estado: 'inactivo' } : p)));
+    }
+
+    // Si se programó próxima cita de control en la atención clínica, crear y persistir automáticamente la nueva Cita
+    if (data.proxima_cita_fecha && data.paciente_id) {
+      const anio = new Date().getFullYear();
+      const correlativo = String(citas.length + 1).padStart(4, '0');
+      const citaAnterior = citas.find((c) => c.id === data.cita_id);
+      const pacActual = pacientes.find((p) => p.id === data.paciente_id);
+      const fechaLimpia = String(data.proxima_cita_fecha).split('T')[0].split(' ')[0];
+      const nuevaCitaControl: Cita = {
+        id: `cita-${Date.now() + 5}`,
+        paciente_id: data.paciente_id,
+        profesional_id: data.profesional_id || citaAnterior?.profesional_id,
+        consultorio_id: data.consultorio_id || citaAnterior?.consultorio_id,
+        fecha_cita: fechaLimpia,
+        hora_cita: citaAnterior?.hora_cita || '08:30',
+        tipo_cita: 'CONSULTA',
+        estado: 'PENDIENTE',
+        motivo_consulta: `Control y seguimiento post-atención (Dx: ${data.cie10_1 || 'Salud Mental'})`,
+        numero_ticket: `TKT-${anio}-${correlativo}`,
+        seguro_cita: citaAnterior?.seguro_cita || (pacActual?.seguro as any) || 'SIS',
+      };
+      setCitas((prev) => [...prev, nuevaCitaControl]);
+      if (isSupabaseConfigured()) {
+        supabaseService.insertCita(nuevaCitaControl).catch((e) => console.warn('Supabase insertCita control error:', e));
+      }
     }
 
     if (isSupabaseConfigured()) {
@@ -901,6 +1028,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         confirmarCita,
         cancelarCita,
         llamarTurno,
+        reprogramarCita,
+        adelantarCita,
+        liberarCupo,
+        catalogoDiagnosticos,
+        catalogoProcedimientos,
         triajes,
         addTriaje,
         llamarPaciente,

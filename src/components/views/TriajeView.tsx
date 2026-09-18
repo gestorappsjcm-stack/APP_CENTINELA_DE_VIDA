@@ -46,14 +46,30 @@ export const TriajeView: React.FC = () => {
   const [motivo, setMotivo] = useState('');
   const [consultorioId, setConsultorioId] = useState(consultorios[0]?.id || '');
 
-  // Citas para triaje
+  // Citas para triaje: Las citas programadas para fechas futuras NO deben aparecer en triaje
   const hoyStr = new Date().toISOString().split('T')[0];
+  const normalizarFecha = (f?: string) => {
+    if (!f) return '';
+    const clean = f.split('T')[0].split(' ')[0].trim();
+    if (clean.includes('/')) {
+      const parts = clean.split('/');
+      if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    return clean;
+  };
+
   const citasHoy = citas.filter((c) => {
     if (c.estado === 'CANCELADA') return false;
+    const fechaNorm = normalizarFecha(c.fecha_cita);
+
+    // Regla estricta: Una cita futura NUNCA debe aparecer en triaje
+    if (fechaNorm > hoyStr) return false;
+
     if (filtroFechaTriaje === 'HOY') {
-      return c.fecha_cita === hoyStr || c.fecha_cita === '2026-09-10';
+      return fechaNorm === hoyStr;
     }
-    return true;
+    return fechaNorm <= hoyStr;
   });
 
   // Cálculo de IMC
