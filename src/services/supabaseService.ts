@@ -460,6 +460,109 @@ export const supabaseService = {
     return null;
   },
 
+  async insertProfesional(prof: Profesional): Promise<string | null> {
+    const client = getSupabase();
+    if (!client) return null;
+    try {
+      const payload: Record<string, any> = {
+        dni: prof.dni || null,
+        apellidos_nombres: prof.apellidos_nombres,
+        profesion: prof.profesion,
+        especialidad: prof.especialidad || null,
+        colegiatura: prof.colegiatura || null,
+        telefono: prof.telefono || null,
+        correo: prof.correo || null,
+        estado: prof.estado || 'ACTIVO',
+      };
+      if (prof.consultorioAsignado) {
+        payload.consultorio_id = prof.consultorioAsignado;
+      }
+
+      const { data, error } = await client.from('cv_profesionales').insert([payload]).select();
+      if (!error && data && data[0]?.id) {
+        return String(data[0].id);
+      }
+
+      if (error) {
+        // Fallback sin consultorio_id por si esa columna no existe en la tabla
+        const { consultorio_id: _c, ...minimalPayload } = payload;
+        const { data: d2, error: err2 } = await client
+          .from('cv_profesionales')
+          .insert([minimalPayload])
+          .select();
+        if (!err2 && d2 && d2[0]?.id) {
+          return String(d2[0].id);
+        }
+        // Segundo fallback generando UUID explícito si la columna id no tiene default
+        const generatedUuid =
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : undefined;
+        if (generatedUuid) {
+          const { data: d3, error: err3 } = await client
+            .from('cv_profesionales')
+            .insert([{ ...minimalPayload, id: generatedUuid }])
+            .select();
+          if (!err3 && d3 && d3[0]?.id) {
+            return String(d3[0].id);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Error insertando profesional en Supabase:', err);
+    }
+    return null;
+  },
+
+  async updateProfesional(id: string, data: Partial<Profesional>): Promise<boolean> {
+    const client = getSupabase();
+    if (!client) return false;
+    try {
+      const payload: Record<string, any> = {};
+      if (data.dni !== undefined) payload.dni = data.dni;
+      if (data.apellidos_nombres !== undefined) payload.apellidos_nombres = data.apellidos_nombres;
+      if (data.profesion !== undefined) payload.profesion = data.profesion;
+      if (data.especialidad !== undefined) payload.especialidad = data.especialidad;
+      if (data.colegiatura !== undefined) payload.colegiatura = data.colegiatura;
+      if (data.telefono !== undefined) payload.telefono = data.telefono;
+      if (data.correo !== undefined) payload.correo = data.correo;
+      if (data.estado !== undefined) payload.estado = data.estado;
+      const { error } = await client.from('cv_profesionales').update(payload).eq('id', id);
+      return !error;
+    } catch (err) {
+      console.warn('Error actualizando profesional en Supabase:', err);
+      return false;
+    }
+  },
+
+  async deleteProfesional(id: string): Promise<boolean> {
+    const client = getSupabase();
+    if (!client) return false;
+    try {
+      const { error } = await client.from('cv_profesionales').delete().eq('id', id);
+      return !error;
+    } catch (err) {
+      console.warn('Error eliminando profesional en Supabase:', err);
+      return false;
+    }
+  },
+
+  async deleteAllProfesionales(): Promise<{ ok: boolean; error?: string }> {
+    const client = getSupabase();
+    if (!client) return { ok: true };
+    try {
+      const { error } = await client.from('cv_profesionales').delete().not('id', 'is', null);
+      if (error) {
+        console.warn('Error eliminando todos los profesionales en Supabase:', error);
+        return { ok: false, error: error.message };
+      }
+      return { ok: true };
+    } catch (err: any) {
+      console.warn('Excepción eliminando todos los profesionales en Supabase:', err);
+      return { ok: false, error: err?.message || 'Error al eliminar profesionales en Supabase' };
+    }
+  },
+
   // 7. USUARIOS: cv_usuarios
   async getUsuarios(): Promise<Usuario[] | null> {
     const client = getSupabase();

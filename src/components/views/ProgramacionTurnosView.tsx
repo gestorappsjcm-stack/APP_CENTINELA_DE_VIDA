@@ -54,7 +54,7 @@ export const ProgramacionTurnosView: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
               {consultorios.map((cons, index) => {
-                const prof = profesionales[index % profesionales.length];
+                const prof = profesionales.length > 0 ? profesionales[index % profesionales.length] : undefined;
 
                 return (
                   <tr key={cons.id} className="hover:bg-slate-50 dark:hover:bg-slate-750/50">
@@ -75,7 +75,7 @@ export const ProgramacionTurnosView: React.FC = () => {
                             {dIdx % 2 === 0 ? '08:00 - 14:00' : '14:00 - 20:00'}
                           </span>
                           <span className="text-[10px] text-slate-600 dark:text-slate-400 block truncate font-medium">
-                            {prof?.apellidos_nombres.split(',')[0]}
+                            {prof ? prof.apellidos_nombres.split(',')[0] : 'Sin asignar'}
                           </span>
                         </div>
                       </td>

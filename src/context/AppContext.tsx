@@ -70,6 +70,7 @@ interface AppContextType {
   updateProfesional: (id: string, data: Partial<Profesional>) => void;
   toggleProfesional: (id: string) => void;
   deleteProfesional: (id: string) => void;
+  deleteAllProfesionales: () => Promise<{ success: boolean; error?: string }>;
 
   // Consultorios
   consultorios: Consultorio[];
@@ -209,8 +210,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= 30) {
-          return parsed;
+        if (Array.isArray(parsed)) {
+          // Limpiar antiguos registros demo (prof-1 a prof-50 o @centinela.gob.pe) para iniciar en blanco con datos reales
+          return parsed.filter(
+            (p: any) =>
+              (!p.id || !/^prof-\d{1,2}$/.test(String(p.id))) &&
+              !(p.correo && String(p.correo).toLowerCase().endsWith('@centinela.gob.pe'))
+          );
         }
       } catch (e) {
         console.warn('Error parseando profesionales:', e);
@@ -225,7 +231,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length >= 13) {
-          return parsed;
+          return parsed.map((c: any) => {
+            const isDemoManana = c.profesional_id && /^prof-\d{1,2}$/.test(String(c.profesional_id));
+            const isDemoTarde = c.profesional_tarde_id && /^prof-\d{1,2}$/.test(String(c.profesional_tarde_id));
+            if (isDemoManana || isDemoTarde) {
+              const {
+                profesional_id: _p1,
+                profesional_nombre: _n1,
+                profesional_tarde_id: _p2,
+                profesional_tarde_nombre: _n2,
+                ...rest
+              } = c;
+              return rest;
+            }
+            return c;
+          });
         }
       } catch (e) {
         console.warn('Error parseando consultorios:', e);
@@ -388,7 +408,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (Array.isArray(supaTriajes)) {
         setTriajes(supaTriajes);
       }
-      if (Array.isArray(supaProfesionales) && supaProfesionales.length > 0) {
+      if (Array.isArray(supaProfesionales)) {
         setProfesionales(supaProfesionales);
       }
       if (Array.isArray(supaUsuarios) && supaUsuarios.length > 0) {
@@ -618,29 +638,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // PROFESIONALES
   const addProfesional = (prof: Omit<Profesional, 'id'>) => {
-    if (profesionales.some((p) => p.dni === prof.dni)) {
-      return { success: false, error: `Ya existe un profesional con DNI: ${prof.dni}` };
+    const cleanDni = prof.dni?.trim();
+    if (cleanDni && profesionales.some((p) => p.dni === cleanDni)) {
+      return { success: false, error: `Ya existe un profesional con DNI: ${cleanDni}` };
     }
+    const tempId = `prof-${Date.now()}`;
     const newProf: Profesional = {
       ...prof,
-      id: `prof-${Date.now()}`,
+      dni: cleanDni || undefined,
+      id: tempId,
     };
     setProfesionales((prev) => [...prev, newProf]);
+
+    if (isSupabaseConfigured()) {
+      supabaseService
+        .insertProfesional(newProf)
+        .then((realId) => {
+          if (realId && realId !== tempId) {
+            setProfesionales((prev) => prev.map((p) => (p.id === tempId ? { ...p, id: realId } : p)));
+          }
+        })
+        .catch((e) => console.warn('Supabase insertProfesional error:', e));
+    }
+
     return { success: true };
   };
 
   const updateProfesional = (id: string, data: Partial<Profesional>) => {
     setProfesionales((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
+    if (isSupabaseConfigured()) {
+      supabaseService.updateProfesional(id, data).catch((e) => console.warn('Supabase updateProfesional error:', e));
+    }
   };
 
   const toggleProfesional = (id: string) => {
+    const actual = profesionales.find((p) => p.id === id);
+    const nuevoEstado: 'ACTIVO' | 'INACTIVO' = actual?.estado === 'ACTIVO' ? 'INACTIVO' : 'ACTIVO';
     setProfesionales((prev) =>
       prev.map((p) => (p.id === id ? { ...p, estado: p.estado === 'ACTIVO' ? 'INACTIVO' : 'ACTIVO' } : p))
     );
+    if (isSupabaseConfigured()) {
+      supabaseService.updateProfesional(id, { estado: nuevoEstado }).catch((e) => console.warn('Supabase toggleProfesional error:', e));
+    }
   };
 
   const deleteProfesional = (id: string) => {
     setProfesionales((prev) => prev.filter((p) => p.id !== id));
+    if (isSupabaseConfigured()) {
+      supabaseService.deleteProfesional(id).catch((e) => console.warn('Supabase deleteProfesional error:', e));
+    }
+  };
+
+  const deleteAllProfesionales = async (): Promise<{ success: boolean; error?: string }> => {
+    setProfesionales([]);
+    localStorage.setItem(`${LOCAL_STORAGE_KEY}_profesionales`, JSON.stringify([]));
+    setSupabaseLiveStats((prev) => (prev ? { ...prev, profesionalesActivos: 0 } : prev));
+    if (isSupabaseConfigured()) {
+      const res = await supabaseService.deleteAllProfesionales();
+      if (!res.ok) {
+        return { success: false, error: res.error };
+      }
+    }
+    return { success: true };
   };
 
   // CONSULTORIOS
@@ -1021,6 +1080,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateProfesional,
         toggleProfesional,
         deleteProfesional,
+        deleteAllProfesionales,
         consultorios,
         updateConsultorio,
         citas,

@@ -1,14 +1,27 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Profesional } from '../../types';
-import { UserCheck, Plus, Search, Mail, Phone, Award, Stethoscope, Building2 } from 'lucide-react';
+import { UserCheck, Plus, Search, Mail, Phone, Trash2, Power } from 'lucide-react';
 
 export const ProfesionalesView: React.FC = () => {
-  const { profesionales, atenciones, addProfesional } = useApp();
+  const {
+    profesionales,
+    atenciones,
+    addProfesional,
+    toggleProfesional,
+    deleteProfesional,
+    deleteAllProfesionales,
+  } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // Form State
+  const [dni, setDni] = useState('');
   const [nombres, setNombres] = useState('');
   const [profesion, setProfesion] = useState('Médico Psiquiatra');
   const [colegiatura, setColegiatura] = useState('');
@@ -21,15 +34,18 @@ export const ProfesionalesView: React.FC = () => {
     return (
       p.apellidos_nombres.toLowerCase().includes(term) ||
       p.profesion.toLowerCase().includes(term) ||
+      (p.dni && p.dni.toLowerCase().includes(term)) ||
       (p.colegiatura && p.colegiatura.toLowerCase().includes(term))
     );
   });
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError('');
     if (!nombres.trim()) return;
 
-    addProfesional({
+    const res = addProfesional({
+      dni: dni.trim() || undefined,
       apellidos_nombres: nombres.trim().toUpperCase(),
       profesion,
       colegiatura: colegiatura.trim() || undefined,
@@ -39,12 +55,34 @@ export const ProfesionalesView: React.FC = () => {
       estado: 'ACTIVO',
     });
 
+    if (!res.success) {
+      setFormError(res.error || 'No se pudo registrar al profesional.');
+      return;
+    }
+
     setIsModalOpen(false);
+    setDni('');
     setNombres('');
     setColegiatura('');
     setEspecialidad('');
     setCorreo('');
     setTelefono('');
+  };
+
+  const handleConfirmDeleteAll = async () => {
+    setIsDeletingAll(true);
+    setStatusMessage(null);
+    const res = await deleteAllProfesionales();
+    setIsDeletingAll(false);
+    setConfirmDeleteAll(false);
+    if (res.success) {
+      setStatusMessage({ type: 'ok', text: 'Se eliminaron todos los profesionales registrados.' });
+    } else {
+      setStatusMessage({
+        type: 'err',
+        text: `Se limpió la vista local, pero Supabase devolvió: ${res.error || 'permiso denegado / llave foránea'}. Ejecuta DELETE FROM cv_profesionales; en Supabase SQL Editor.`,
+      });
+    }
   };
 
   return (
@@ -65,14 +103,63 @@ export const ProfesionalesView: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-[#1A2B4A] hover:bg-[#243b5e] text-white px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer shadow-md transition-all self-start md:self-auto"
-        >
-          <Plus size={16} />
-          <span>+ Registrar Profesional</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+          {profesionales.length > 0 && (
+            confirmDeleteAll ? (
+              <div className="flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 px-3 py-1.5 rounded-xl text-xs">
+                <span className="font-semibold text-rose-700 dark:text-rose-300">
+                  ¿Eliminar los {profesionales.length}?
+                </span>
+                <button
+                  type="button"
+                  disabled={isDeletingAll}
+                  onClick={handleConfirmDeleteAll}
+                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer disabled:opacity-50"
+                >
+                  {isDeletingAll ? 'Eliminando...' : 'Sí, eliminar todos'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingAll}
+                  onClick={() => setConfirmDeleteAll(false)}
+                  className="px-2 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 font-semibold cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteAll(true)}
+                className="flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all"
+              >
+                <Trash2 size={15} />
+                <span>Eliminar Todos ({profesionales.length})</span>
+              </button>
+            )
+          )}
+
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 bg-[#1A2B4A] hover:bg-[#243b5e] text-white px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer shadow-md transition-all"
+          >
+            <Plus size={16} />
+            <span>+ Registrar Profesional</span>
+          </button>
+        </div>
       </div>
+
+      {statusMessage && (
+        <div
+          className={`p-3 rounded-xl text-xs font-medium border ${
+            statusMessage.type === 'ok'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          }`}
+        >
+          {statusMessage.text}
+        </div>
+      )}
 
       {/* Toolbar Search */}
       <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs max-w-md">
@@ -87,83 +174,152 @@ export const ProfesionalesView: React.FC = () => {
       </div>
 
       {/* Grid de Profesionales */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filtrados.map((p) => {
-          const atencionesRealizadas = atenciones.filter((a) => a.profesional_id === p.id).length;
+      {filtrados.length === 0 ? (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-10 text-center space-y-2">
+          <div className="w-12 h-12 mx-auto rounded-2xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 flex items-center justify-center">
+            <UserCheck size={24} />
+          </div>
+          <h3 className="text-sm font-bold text-slate-800 dark:text-white">
+            {profesionales.length === 0
+              ? 'No hay profesionales registrados aún'
+              : 'No se encontraron profesionales con ese criterio'}
+          </h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            {profesionales.length === 0
+              ? 'La base de profesionales está en blanco lista para ingresar tu equipo médico y asistencial real.'
+              : 'Prueba buscando con otro nombre, DNI o número de colegiatura.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filtrados.map((p) => {
+            const atencionesRealizadas = atenciones.filter((a) => a.profesional_id === p.id).length;
 
-          return (
-            <div
-              key={p.id}
-              className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 shadow-xs hover:border-teal-500/50 hover:shadow-md transition-all flex flex-col justify-between"
-            >
-              <div className="space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 flex items-center justify-center font-bold text-sm uppercase">
-                      {p.apellidos_nombres[0]}
-                      {p.apellidos_nombres.split(' ')[1]?.[0] || 'M'}
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-                        {p.apellidos_nombres}
-                      </h4>
-                      <div className="text-xs text-teal-700 dark:text-teal-400 font-semibold mt-0.5">
-                        {p.profesion}
+            return (
+              <div
+                key={p.id}
+                className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 shadow-xs hover:border-teal-500/50 hover:shadow-md transition-all flex flex-col justify-between"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 flex items-center justify-center font-bold text-sm uppercase shrink-0">
+                        {p.apellidos_nombres[0] || 'P'}
+                        {p.apellidos_nombres.split(' ')[1]?.[0] || 'M'}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+                          {p.apellidos_nombres}
+                        </h4>
+                        <div className="text-xs text-teal-700 dark:text-teal-400 font-semibold mt-0.5">
+                          {p.profesion}
+                        </div>
                       </div>
                     </div>
+
+                    <span
+                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase shrink-0 ${
+                        p.estado === 'ACTIVO'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}
+                    >
+                      {p.estado}
+                    </span>
                   </div>
 
-                  <span
-                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase ${
-                      p.estado === 'ACTIVO'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-rose-100 text-rose-800'
-                    }`}
+                  <div className="text-xs text-slate-500 space-y-1 bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl">
+                    {p.dni && (
+                      <div className="flex justify-between">
+                        <span>DNI:</span>
+                        <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                          {p.dni}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>Colegiatura:</span>
+                      <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                        {p.colegiatura || 'No reg.'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Especialidad:</span>
+                      <span className="font-medium text-slate-700 dark:text-slate-300">
+                        {p.especialidad || 'General'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Atenciones Realizadas:</span>
+                      <span className="font-bold text-teal-600">
+                        {atencionesRealizadas} registradas
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-slate-500 space-y-1 pt-1">
+                    {p.correo && (
+                      <div className="flex items-center gap-2 truncate">
+                        <Mail size={12} className="text-slate-400" />
+                        <span>{p.correo}</span>
+                      </div>
+                    )}
+                    {p.telefono && (
+                      <div className="flex items-center gap-2">
+                        <Phone size={12} className="text-slate-400" />
+                        <span>{p.telefono}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 mt-3 border-t border-slate-100 dark:border-slate-700/60">
+                  <button
+                    type="button"
+                    onClick={() => toggleProfesional(p.id)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                    title={p.estado === 'ACTIVO' ? 'Desactivar profesional' : 'Activar profesional'}
                   >
-                    {p.estado}
-                  </span>
-                </div>
-
-                <div className="text-xs text-slate-500 space-y-1 bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl">
-                  <div className="flex justify-between">
-                    <span>Colegiatura:</span>
-                    <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                      {p.colegiatura || 'No reg.'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Especialidad:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300">
-                      {p.especialidad || 'General'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Atenciones Realizadas:</span>
-                    <span className="font-bold text-teal-600">
-                      {atencionesRealizadas} registradas
-                    </span>
-                  </div>
-                </div>
-
-                <div className="text-xs text-slate-500 space-y-1 pt-1">
-                  {p.correo && (
-                    <div className="flex items-center gap-2 truncate">
-                      <Mail size={12} className="text-slate-400" />
-                      <span>{p.correo}</span>
+                    <Power size={12} />
+                    <span>{p.estado === 'ACTIVO' ? 'Desactivar' : 'Activar'}</span>
+                  </button>
+                  {confirmDeleteId === p.id ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          deleteProfesional(p.id);
+                          setConfirmDeleteId(null);
+                        }}
+                        className="px-2 py-1 rounded-lg text-[11px] font-bold bg-rose-600 text-white hover:bg-rose-700 cursor-pointer"
+                      >
+                        Confirmar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-500 hover:bg-slate-100 cursor-pointer"
+                      >
+                        No
+                      </button>
                     </div>
-                  )}
-                  {p.telefono && (
-                    <div className="flex items-center gap-2">
-                      <Phone size={12} className="text-slate-400" />
-                      <span>{p.telefono}</span>
-                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(p.id)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
+                      title="Eliminar profesional"
+                    >
+                      <Trash2 size={12} />
+                      <span>Eliminar</span>
+                    </button>
                   )}
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Modal Registrar */}
       {isModalOpen && (
@@ -173,17 +329,36 @@ export const ProfesionalesView: React.FC = () => {
               Registrar Nuevo Profesional de Salud
             </h3>
 
+            {formError && (
+              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
+                {formError}
+              </div>
+            )}
+
             <form onSubmit={handleSave} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-semibold mb-1">Apellidos y Nombres *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej: MEDINA ROJAS, LUIS ALBERTO"
-                  value={nombres}
-                  onChange={(e) => setNombres(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg uppercase"
-                />
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-1">
+                  <label className="block font-semibold mb-1">DNI</label>
+                  <input
+                    type="text"
+                    maxLength={8}
+                    placeholder="8 dígitos"
+                    value={dni}
+                    onChange={(e) => setDni(e.target.value.replace(/\D/g, ''))}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-mono"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block font-semibold mb-1">Apellidos y Nombres *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: MEDINA ROJAS, LUIS ALBERTO"
+                    value={nombres}
+                    onChange={(e) => setNombres(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg uppercase"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

@@ -394,7 +394,7 @@ export const DashboardView: React.FC = () => {
                   {cons.nombre}
                 </div>
                 <div className="text-[11px] text-slate-500 truncate">
-                  {cons.profesional_nombre}
+                  {cons.profesional_nombre || 'Consultorio operativo'}
                 </div>
 
                 <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 text-xs">

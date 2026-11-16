@@ -564,7 +564,7 @@ export const TriajeView: React.FC = () => {
                   >
                     {consultorios.map((cons) => (
                       <option key={cons.id} value={cons.id}>
-                        {cons.codigo} - {cons.nombre} ({cons.profesional_nombre})
+                        {cons.codigo} - {cons.nombre}{cons.profesional_nombre ? ` (${cons.profesional_nombre})` : ''}
                       </option>
                     ))}
                   </select>
