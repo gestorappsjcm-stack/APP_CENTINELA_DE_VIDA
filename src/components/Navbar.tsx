@@ -6,10 +6,13 @@ export const Navbar: React.FC = () => {
   const {
     currentUser,
     setCurrentUser,
+    isDeveloperMode,
+    developerUser,
     usuarios,
     theme,
     toggleTheme,
     setActiveModal,
+    setCurrentTab,
     logoutUser,
     supabaseStatus,
   } = useApp();
@@ -104,12 +107,99 @@ export const Navbar: React.FC = () => {
           )}
         </button>
 
-        {/* User Pill with fast switcher */}
-        <div className="relative">
-          <button
-            onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-2.5 bg-white/10 hover:bg-white/15 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-all border border-white/10"
-          >
+        {/* User Pill (fast switcher restricted strictly to Developer session) */}
+        {isDeveloperMode ? (
+          <div className="relative">
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="flex items-center gap-2.5 bg-white/10 hover:bg-white/15 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-all border border-teal-400/40"
+              title="Selector de usuario (Modo Desarrollador)"
+            >
+              <div className="w-7 h-7 rounded-full bg-[#2D9C8B] text-white flex items-center justify-center font-bold text-xs uppercase shadow-sm">
+                {currentUser.nombres[0]}
+                {currentUser.apellidos[0]}
+              </div>
+              <div className="hidden sm:block text-left">
+                <span className="font-semibold block leading-tight">
+                  {currentUser.nombres.split(' ')[0]} {currentUser.apellidos.split(' ')[0]}
+                </span>
+                <span className="text-[10px] text-teal-300 uppercase block font-mono">
+                  {currentUser.rol}
+                </span>
+              </div>
+              <ChevronDown size={14} className="text-white/60 ml-0.5" />
+            </button>
+
+            {/* Switcher Dropdown to test permissions (Developer only) */}
+            {showUserMenu && (
+              <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] uppercase font-bold text-slate-400 dark:text-slate-400 tracking-wider">
+                      Cambiar Usuario Activo
+                    </span>
+                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                      DEV
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Prueba permisos por rol y módulo al instante:
+                  </p>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto py-1">
+                  {[developerUser, ...usuarios.filter((u) => u.rol !== 'desarrollador' && u.id !== 'usr-dev')].map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => {
+                        setCurrentUser(u);
+                        setShowUserMenu(false);
+                      }}
+                      className={`w-full px-3 py-2 text-left flex items-center justify-between text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
+                        currentUser.id === u.id ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200 font-semibold' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${
+                            u.rol === 'desarrollador'
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          {u.rol === 'desarrollador' ? 'DEV' : `${u.nombres[0]}${u.apellidos[0]}`}
+                        </div>
+                        <div>
+                          <div className="font-medium text-slate-800 dark:text-slate-100">
+                            {u.nombres} {u.apellidos}
+                          </div>
+                          <div className="text-[10px] text-slate-400 uppercase font-mono">
+                            {u.rol} • {u.permisosModulos.length} módulos
+                          </div>
+                        </div>
+                      </div>
+                      {currentUser.id === u.id && <Check size={16} className="text-teal-600 dark:text-teal-400" />}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="px-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setCurrentTab('gestion_usuarios');
+                    }}
+                    className="w-full py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <UserPlus size={13} />
+                    Ir a Gestión de Usuarios
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5 bg-white/10 px-3 py-1.5 rounded-full text-xs font-medium border border-white/10 select-none">
             <div className="w-7 h-7 rounded-full bg-[#2D9C8B] text-white flex items-center justify-center font-bold text-xs uppercase shadow-sm">
               {currentUser.nombres[0]}
               {currentUser.apellidos[0]}
@@ -122,67 +212,8 @@ export const Navbar: React.FC = () => {
                 {currentUser.rol}
               </span>
             </div>
-            <ChevronDown size={14} className="text-white/60 ml-0.5" />
-          </button>
-
-          {/* Switcher Dropdown to test permissions */}
-          {showUserMenu && (
-            <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] uppercase font-bold text-slate-400 dark:text-slate-400 block tracking-wider">
-                  Cambiar Usuario Activo
-                </span>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Prueba permisos por rol y módulo al instante:
-                </p>
-              </div>
-
-              <div className="max-h-60 overflow-y-auto py-1">
-                {usuarios.map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => {
-                      setCurrentUser(u);
-                      setShowUserMenu(false);
-                    }}
-                    className={`w-full px-3 py-2 text-left flex items-center justify-between text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
-                      currentUser.id === u.id ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200 font-semibold' : ''
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center font-bold text-xs">
-                        {u.nombres[0]}
-                        {u.apellidos[0]}
-                      </div>
-                      <div>
-                        <div className="font-medium text-slate-800 dark:text-slate-100">
-                          {u.nombres} {u.apellidos}
-                        </div>
-                        <div className="text-[10px] text-slate-400 uppercase font-mono">
-                          {u.rol} • {u.permisosModulos.length} módulos
-                        </div>
-                      </div>
-                    </div>
-                    {currentUser.id === u.id && <Check size={16} className="text-teal-600 dark:text-teal-400" />}
-                  </button>
-                ))}
-              </div>
-
-              <div className="px-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <button
-                  onClick={() => {
-                    setShowUserMenu(false);
-                    setActiveModal('gestionUsuarios');
-                  }}
-                  className="w-full py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <UserPlus size={13} />
-                  Crear / Configurar Usuarios
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Salir Button */}
         <button

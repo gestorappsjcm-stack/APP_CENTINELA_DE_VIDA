@@ -1002,7 +1002,7 @@ export const FuaView: React.FC = () => {
                             <Eye size={16} />
                           </button>
 
-                          {currentUser.rol === 'administrador' && (
+                          {(currentUser.rol === 'administrador' || currentUser.rol === 'desarrollador') && (
                             <button
                               onClick={() => handleEliminarFua(f.id, f.numero_fua)}
                               className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"

@@ -12,7 +12,7 @@ export type EstadoCita = 'PENDIENTE' | 'CONFIRMADA' | 'ATENDIDA' | 'CANCELADA' |
 
 export type EstadoTriaje = 'EN_ESPERA' | 'LLAMADO' | 'ATENDIDO';
 
-export type RolUsuario = 'administrador' | 'medico' | 'psicologo' | 'enfermero' | 'admision' | 'general';
+export type RolUsuario = 'desarrollador' | 'administrador' | 'medico' | 'psicologo' | 'enfermero' | 'admision' | 'general';
 
 export type ModuleId =
   | 'dashboard'

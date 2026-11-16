@@ -22,7 +22,7 @@ import { ModalSupabaseStatus } from './components/modals/ModalSupabaseStatus';
 import { Lock, ShieldAlert, ArrowLeft } from 'lucide-react';
 
 const MainContent: React.FC = () => {
-  const { currentTab, setCurrentTab, canAccess, currentUser } = useApp();
+  const { currentTab, setCurrentTab, canAccess, currentUser, isDeveloperMode } = useApp();
 
   // Validación estricta de autorización de módulo para el usuario activo
   const hasAccess = canAccess(currentTab as any);
@@ -44,7 +44,9 @@ const MainContent: React.FC = () => {
         </div>
 
         <div className="p-4 bg-slate-50 dark:bg-slate-900/40 rounded-xl text-xs text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 max-w-md mx-auto">
-          Para solicitar permisos adicionales, contacte al Administrador del sistema o cambie de usuario en la barra superior.
+          {isDeveloperMode
+            ? 'Para probar otro perfil, cambie de usuario en el selector de desarrollador en la barra superior.'
+            : 'Para solicitar permisos adicionales, contacte al Administrador del sistema.'}
         </div>
 
         <button

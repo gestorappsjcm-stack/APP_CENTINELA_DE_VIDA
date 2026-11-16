@@ -23,6 +23,7 @@ export const GestionUsuariosView: React.FC = () => {
     usuarios,
     currentUser,
     setCurrentUser,
+    isDeveloperMode,
     addUsuario,
     updateUsuario,
     deleteUsuario,
@@ -155,6 +156,11 @@ export const GestionUsuariosView: React.FC = () => {
       return;
     }
 
+    if (formData.usuario.trim().toUpperCase() === 'DEV') {
+      setFormError('El nombre de usuario "DEV" está reservado para el sistema.');
+      return;
+    }
+
     // Verificar usuario único
     const existeUsuario = usuarios.some(
       (u) => u.usuario.toLowerCase() === formData.usuario.toLowerCase() && u.id !== editingUserId
@@ -198,6 +204,7 @@ export const GestionUsuariosView: React.FC = () => {
 
   // Filtrado de usuarios
   const usuariosFiltrados = usuarios.filter((u) => {
+    if (u.rol === 'desarrollador' || u.id === 'usr-dev') return false;
     const matchesSearch =
       u.nombres.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.apellidos.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -389,18 +396,24 @@ export const GestionUsuariosView: React.FC = () => {
 
               {/* Card Actions */}
               <div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-100 dark:border-slate-700/60 gap-2">
-                <button
-                  onClick={() => setCurrentUser(u)}
-                  title="Cambiar sesión activa a este usuario para probar sus permisos"
-                  className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all ${
-                    isCurrent
-                      ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300'
-                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
-                  }`}
-                >
-                  <LogIn size={13} />
-                  <span>{isCurrent ? 'Activo' : 'Iniciar como'}</span>
-                </button>
+                {isDeveloperMode ? (
+                  <button
+                    onClick={() => setCurrentUser(u)}
+                    title="Cambiar sesión activa a este usuario para probar sus permisos"
+                    className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all ${
+                      isCurrent
+                        ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300'
+                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    <LogIn size={13} />
+                    <span>{isCurrent ? 'Activo' : 'Iniciar como'}</span>
+                  </button>
+                ) : (
+                  <span className="text-[11px] font-medium text-slate-400">
+                    {isCurrent ? 'Sesión en curso' : `Cuenta ${u.estado}`}
+                  </span>
+                )}
 
                 <div className="flex items-center gap-1.5">
                   <button

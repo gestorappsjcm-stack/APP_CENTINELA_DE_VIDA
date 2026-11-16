@@ -23,6 +23,7 @@ import {
   INITIAL_FUAS,
   DIAGNOSTICOS_CIE10,
   PROCEDIMIENTOS_CPMS,
+  MODULOS_SISTEMA,
 } from '../data/mockData';
 import { supabaseService, SupabaseDashboardStats } from '../services/supabaseService';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -31,6 +32,8 @@ interface AppContextType {
   // Autenticación y permisos
   currentUser: Usuario;
   setCurrentUser: (user: Usuario) => void;
+  isDeveloperMode: boolean;
+  developerUser: Usuario;
   usuarios: Usuario[];
   addUsuario: (usuario: Omit<Usuario, 'id' | 'fechaCreacion'>) => void;
   updateUsuario: (id: string, data: Partial<Usuario>) => void;
@@ -120,6 +123,18 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_KEY = 'centinela_vida_csmc_state_v1';
 
+const DEV_USER: Usuario = {
+  id: 'usr-dev',
+  usuario: 'DEV',
+  nombres: 'Desarrollador',
+  apellidos: 'Sistema',
+  rol: 'desarrollador',
+  estado: 'activo',
+  permisosModulos: MODULOS_SISTEMA.map((m) => m.id),
+  ultimoAcceso: 'Sesión activa',
+  fechaCreacion: '2025-01-01',
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Inicialización con persistencia local
   const [usuarios, setUsuarios] = useState<Usuario[]>(() => {
@@ -127,12 +142,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : INITIAL_USUARIOS;
   });
 
-  const [currentUser, setCurrentUser] = useState<Usuario>(() => {
+  const [isDeveloperMode, setIsDeveloperMode] = useState<boolean>(() => {
+    const active = sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_active_session`);
+    const devMode = sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_dev_mode`);
+    return Boolean(active) && devMode === 'true';
+  });
+
+  const [currentUser, setCurrentUserState] = useState<Usuario>(() => {
     const savedSession = sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_active_session`);
+    const devMode = sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_dev_mode`) === 'true';
     if (savedSession) {
       try {
         const parsed = JSON.parse(savedSession);
-        if (parsed && parsed.id) return parsed;
+        if (parsed && parsed.id) {
+          if (parsed.id === 'usr-dev' && !devMode) {
+            return usuarios[0] || INITIAL_USUARIOS[0];
+          }
+          return parsed;
+        }
       } catch (e) {
         console.warn('Error leyendo sesion activa:', e);
       }
@@ -473,23 +500,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(`${LOCAL_STORAGE_KEY}_consultorios`, JSON.stringify(consultorios));
   }, [consultorios]);
 
+  // Cambio rápido de usuario (exclusivo para sesión de desarrollador)
+  const setCurrentUser = (user: Usuario) => {
+    if (!isDeveloperMode) return;
+    setCurrentUserState(user);
+    try {
+      sessionStorage.setItem(`${LOCAL_STORAGE_KEY}_active_session`, JSON.stringify(user));
+    } catch (e) {
+      console.warn('Error guardando sesion:', e);
+    }
+  };
+
   // Login y Logout
   const loginUser = (username: string, pass: string) => {
-    const user = usuarios.find((u) => u.usuario.toLowerCase() === username.trim().toLowerCase());
+    const cleanUser = username.trim();
+
+    if (cleanUser.toUpperCase() === 'DEV') {
+      if (pass !== 'test125879') {
+        return { success: false, error: 'Contraseña incorrecta.' };
+      }
+      setCurrentUserState(DEV_USER);
+      setIsDeveloperMode(true);
+      setIsLoggedOut(false);
+      try {
+        sessionStorage.setItem(`${LOCAL_STORAGE_KEY}_active_session`, JSON.stringify(DEV_USER));
+        sessionStorage.setItem(`${LOCAL_STORAGE_KEY}_dev_mode`, 'true');
+      } catch (e) {
+        console.warn('Error guardando sesion:', e);
+      }
+      return { success: true };
+    }
+
+    const user = usuarios.find((u) => u.usuario.toLowerCase() === cleanUser.toLowerCase());
     if (!user) {
       return { success: false, error: 'El nombre de usuario no existe en el sistema.' };
     }
     if (user.estado === 'inactivo') {
       return { success: false, error: 'Esta cuenta se encuentra inactiva. Contacte al Administrador.' };
     }
-    // Si tiene contraseña configurada la validamos, sino demo libre
-    if (user.contrasena && pass && user.contrasena !== pass) {
+    // Si tiene contraseña configurada la validamos estrictamente
+    if (user.contrasena && user.contrasena !== pass) {
       return { success: false, error: 'Contraseña incorrecta.' };
     }
-    setCurrentUser(user);
+
+    setIsDeveloperMode(false);
+    setCurrentUserState(user);
     setIsLoggedOut(false);
     try {
       sessionStorage.setItem(`${LOCAL_STORAGE_KEY}_active_session`, JSON.stringify(user));
+      sessionStorage.removeItem(`${LOCAL_STORAGE_KEY}_dev_mode`);
     } catch (e) {
       console.warn('Error guardando sesion:', e);
     }
@@ -499,9 +558,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const logoutUser = () => {
     try {
       sessionStorage.removeItem(`${LOCAL_STORAGE_KEY}_active_session`);
+      sessionStorage.removeItem(`${LOCAL_STORAGE_KEY}_dev_mode`);
     } catch (e) {
       console.warn('Error eliminando sesion:', e);
     }
+    setIsDeveloperMode(false);
     setIsLoggedOut(true);
   };
 
@@ -572,16 +633,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Actualizar usuario actual si cambia en la lista
   useEffect(() => {
+    if (currentUser.id === 'usr-dev') return;
     const found = usuarios.find((u) => u.id === currentUser.id);
     if (found) {
-      setCurrentUser(found);
+      setCurrentUserState(found);
     }
   }, [usuarios, currentUser.id]);
 
   // Verificar si el usuario actual tiene acceso al módulo
   const canAccess = (moduleId: ModuleId): boolean => {
     if (!currentUser) return true;
-    if (currentUser.rol === 'administrador') return true;
+    if (currentUser.rol === 'administrador' || currentUser.rol === 'desarrollador') return true;
     // La ficha clínica y el display de turnos son de acceso universal en el CSMC
     if (moduleId === 'ficha_paciente' || moduleId === 'display_turnos') return true;
     if (!currentUser.permisosModulos || !Array.isArray(currentUser.permisosModulos)) return true;
@@ -1134,6 +1196,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       value={{
         currentUser,
         setCurrentUser,
+        isDeveloperMode,
+        developerUser: DEV_USER,
         usuarios,
         addUsuario,
         updateUsuario,
