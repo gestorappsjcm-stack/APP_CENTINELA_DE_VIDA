@@ -190,11 +190,16 @@ export const supabaseService = {
     return null;
   },
 
-  async insertPaciente(paciente: Paciente): Promise<string | null> {
+  async insertPaciente(paciente: Paciente): Promise<{ id: string | null; error?: string }> {
     const client = getSupabase();
-    if (!client) return null;
+    if (!client) return { id: paciente.id };
     try {
-      const corePayload: Record<string, any> = {
+      const generatedUuid =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : undefined;
+
+      const bareMinimal: Record<string, any> = {
         tipo_documento: paciente.tipo_documento,
         numero_documento: paciente.numero_documento || null,
         codigo_temporal: paciente.codigo_temporal || null,
@@ -202,14 +207,18 @@ export const supabaseService = {
         apellidos_nombres: paciente.apellidos_nombres,
         fecha_nacimiento: paciente.fecha_nacimiento || null,
         sexo: paciente.sexo || null,
-        edad: typeof paciente.edad === 'number' ? paciente.edad : null,
-        estado_civil: paciente.estado_civil || null,
-        grado_instruccion: paciente.grado_instruccion || null,
-        seguro: paciente.seguro || null,
+        seguro: paciente.seguro || 'SIS',
         direccion: paciente.direccion || null,
         distrito: paciente.distrito || null,
         celular: paciente.celular || null,
         estado: paciente.estado || 'activo',
+      };
+
+      const corePayload: Record<string, any> = {
+        ...bareMinimal,
+        edad: typeof paciente.edad === 'number' ? paciente.edad : null,
+        estado_civil: paciente.estado_civil || null,
+        grado_instruccion: paciente.grado_instruccion || null,
         fecha_ingreso: paciente.fecha_ingreso,
         tiene_tutor: Boolean(paciente.tiene_tutor),
         tutor_nombres: paciente.tutor_nombres || null,
@@ -219,7 +228,7 @@ export const supabaseService = {
 
       const fullPayload: Record<string, any> = {
         ...corePayload,
-        id: paciente.id,
+        ...(generatedUuid ? { id: generatedUuid } : {}),
         seguro_otro_especificar: paciente.seguro_otro_especificar || null,
         distrito_otro_especificar: paciente.distrito_otro_especificar || null,
         tutor_tipo_documento: paciente.tutor_tipo_documento || null,
@@ -228,33 +237,35 @@ export const supabaseService = {
 
       const { data, error } = await client.from('cv_pacientes').insert([fullPayload]).select('id');
       if (!error && data && data[0]?.id) {
-        return String(data[0].id);
+        return { id: String(data[0].id) };
       }
 
-      // Fallback 1: columnas base con UUID generado (si id es uuid en Supabase)
-      const generatedUuid =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : undefined;
-      const fallbackPayload = generatedUuid ? { ...corePayload, id: generatedUuid } : { ...corePayload, id: paciente.id };
-      const { data: d2, error: err2 } = await client.from('cv_pacientes').insert([fallbackPayload]).select('id');
+      // Fallback 1: columnas base con UUID generado
+      const coreWithId = generatedUuid ? { ...corePayload, id: generatedUuid } : corePayload;
+      const { data: d2, error: err2 } = await client.from('cv_pacientes').insert([coreWithId]).select('id');
       if (!err2 && d2 && d2[0]?.id) {
-        return String(d2[0].id);
+        return { id: String(d2[0].id) };
       }
 
-      // Fallback 2: dejar que Supabase genere el id por defecto
-      const { data: d3, error: err3 } = await client.from('cv_pacientes').insert([corePayload]).select('id');
+      // Fallback 2: columnas mínimas con UUID generado
+      const minimalWithId = generatedUuid ? { ...bareMinimal, id: generatedUuid } : bareMinimal;
+      const { data: d3, error: err3 } = await client.from('cv_pacientes').insert([minimalWithId]).select('id');
       if (!err3 && d3 && d3[0]?.id) {
-        return String(d3[0].id);
+        return { id: String(d3[0].id) };
       }
 
-      if (error || err2 || err3) {
-        console.warn('Error insertando paciente en Supabase:', error || err2 || err3);
+      // Fallback 3: sin campo id (dejar que PostgreSQL asigne id por defecto)
+      const { data: d4, error: err4 } = await client.from('cv_pacientes').insert([bareMinimal]).select('id');
+      if (!err4 && d4 && d4[0]?.id) {
+        return { id: String(d4[0].id) };
       }
-      return null;
-    } catch (err) {
+
+      const lastErr = err4 || err3 || err2 || error;
+      console.warn('Error insertando paciente en Supabase:', lastErr);
+      return { id: null, error: lastErr?.message || 'No se pudo guardar el paciente en Supabase.' };
+    } catch (err: any) {
       console.warn('Error insertando paciente en Supabase:', err);
-      return null;
+      return { id: null, error: err?.message || 'Error al insertar paciente en Supabase.' };
     }
   },
 

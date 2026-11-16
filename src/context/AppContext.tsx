@@ -57,7 +57,7 @@ interface AppContextType {
   pacientes: Paciente[];
   editingPaciente: Paciente | null;
   setEditingPaciente: (p: Paciente | null) => void;
-  addPaciente: (paciente: Omit<Paciente, 'id' | 'fecha_ingreso'>) => { success: boolean; message?: string; error?: string };
+  addPaciente: (paciente: Omit<Paciente, 'id' | 'fecha_ingreso'>) => Promise<{ success: boolean; message?: string; error?: string }>;
   updatePaciente: (id: string, data: Partial<Paciente>) => Promise<{ success: boolean; error?: string }>;
   deletePaciente: (id: string) => void;
 
@@ -703,7 +703,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // PACIENTES
-  const addPaciente = (data: Omit<Paciente, 'id' | 'fecha_ingreso'>) => {
+  const addPaciente = async (
+    data: Omit<Paciente, 'id' | 'fecha_ingreso'>
+  ): Promise<{ success: boolean; message?: string; error?: string }> => {
     // Verificar duplicados
     if (data.tipo_documento === 'INDOCUMENTADO' && data.hcl) {
       const existe = pacientes.some((p) => p.hcl?.toLowerCase() === data.hcl?.toLowerCase());
@@ -726,18 +728,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fecha_ingreso: new Date().toISOString().split('T')[0],
     };
 
-    setPacientes((prev) => [newPaciente, ...prev]);
-    // Persistir en Supabase si está enlazado y reconciliar ID real
     if (isSupabaseConfigured()) {
-      supabaseService
-        .insertPaciente(newPaciente)
-        .then((realId) => {
-          if (realId && realId !== tempId) {
-            setPacientes((prev) => prev.map((p) => (p.id === tempId ? { ...p, id: realId } : p)));
-          }
-        })
-        .catch((e) => console.warn('Supabase insertPaciente error:', e));
+      const res = await supabaseService.insertPaciente(newPaciente);
+      if (!res.id) {
+        return {
+          success: false,
+          error: res.error || 'No se pudo guardar el paciente en la base de datos Supabase.',
+        };
+      }
+      newPaciente.id = res.id;
     }
+
+    setPacientes((prev) => [newPaciente, ...prev]);
     return { success: true, message: 'Paciente registrado correctamente.' };
   };
 

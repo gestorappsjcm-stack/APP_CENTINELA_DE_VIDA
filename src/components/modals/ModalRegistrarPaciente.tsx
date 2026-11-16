@@ -54,8 +54,53 @@ export const ModalRegistrarPaciente: React.FC = () => {
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const resetFormFields = (keepSuccessMessage = false) => {
+    setTipoDoc('DNI');
+    setNumDoc('');
+    setCodigoTemporal('');
+    setApellidosNombres('');
+    setHcl('');
+    setFechaNacimiento('');
+    setEdad('');
+    setSexo('');
+    setEstadoCivil('SOLTERO');
+    setGradoInstruccion('SECUNDARIA');
+    setSeguro('SIS');
+    setSeguroOtro('');
+    setDireccion('');
+    setDistrito('CHINCHA ALTA');
+    setDistritoOtro('');
+    setCelular('');
+    setTieneTutor(false);
+    setTutorNombres('');
+    setTutorTipoDoc('DNI');
+    setTutorNumDoc('');
+    setTutorCelular('');
+    setTutorParentesco('PADRE');
+    setIsSearchingDNI(false);
+    setDniSearchStatus(null);
+    setIsSearchingTutorDNI(false);
+    setTutorSearchStatus(null);
+    setPacienteExistente(null);
+    setDuplicateWarning(null);
+    setFormError(null);
+    if (!keepSuccessMessage) {
+      setFormSuccess(null);
+    }
+    setIsSaving(false);
+  };
+
+  // Reiniciar el formulario cada vez que se abre el modal de registro
+  useEffect(() => {
+    if (activeModal === 'registrarPaciente') {
+      resetFormFields(false);
+    }
+  }, [activeModal]);
 
   useEffect(() => {
+    if (activeModal !== 'registrarPaciente' || formSuccess) return;
     if (tipoDoc === 'INDOCUMENTADO') {
       const now = new Date();
       const fechaStr =
@@ -69,7 +114,7 @@ export const ModalRegistrarPaciente: React.FC = () => {
       setCodigoTemporal('');
     }
     verificarDuplicado();
-  }, [tipoDoc, numDoc, hcl]);
+  }, [tipoDoc, numDoc, hcl, activeModal, formSuccess, pacientes]);
 
   // Cálculo automático de edad
   const handleFechaNacimientoChange = (fecha: string) => {
@@ -160,8 +205,9 @@ export const ModalRegistrarPaciente: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
     setFormError(null);
     setFormSuccess(null);
 
@@ -180,7 +226,8 @@ export const ModalRegistrarPaciente: React.FC = () => {
       return;
     }
 
-    const res = addPaciente({
+    setIsSaving(true);
+    const res = await addPaciente({
       tipo_documento: tipoDoc,
       numero_documento: tipoDoc !== 'INDOCUMENTADO' ? numDoc.trim() : undefined,
       codigo_temporal: tipoDoc === 'INDOCUMENTADO' ? codigoTemporal : undefined,
@@ -205,16 +252,19 @@ export const ModalRegistrarPaciente: React.FC = () => {
       tutor_celular: tieneTutor ? tutorCelular.trim() : undefined,
       tutor_parentesco: tieneTutor ? tutorParentesco : undefined,
     });
+    setIsSaving(false);
 
     if (!res.success) {
       setFormError(res.error || 'Error al registrar paciente');
       return;
     }
 
+    resetFormFields(true);
     setFormSuccess('¡Paciente registrado con éxito!');
     setTimeout(() => {
+      setFormSuccess(null);
       setActiveModal(null);
-    }, 1200);
+    }, 1000);
   };
 
   if (activeModal !== 'registrarPaciente') return null;
@@ -730,10 +780,10 @@ export const ModalRegistrarPaciente: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={!!duplicateWarning}
+              disabled={!!duplicateWarning || isSaving}
               className="px-5 py-2 text-xs font-bold bg-[#1A2B4A] hover:bg-[#243b5e] disabled:opacity-50 text-white rounded-lg shadow-md cursor-pointer transition-all"
             >
-              Guardar Paciente
+              {isSaving ? 'Guardando...' : 'Guardar Paciente'}
             </button>
           </div>
         </form>
