@@ -55,8 +55,10 @@ interface AppContextType {
 
   // Pacientes
   pacientes: Paciente[];
+  editingPaciente: Paciente | null;
+  setEditingPaciente: (p: Paciente | null) => void;
   addPaciente: (paciente: Omit<Paciente, 'id' | 'fecha_ingreso'>) => { success: boolean; message?: string; error?: string };
-  updatePaciente: (id: string, data: Partial<Paciente>) => void;
+  updatePaciente: (id: string, data: Partial<Paciente>) => Promise<{ success: boolean; error?: string }>;
   deletePaciente: (id: string) => void;
 
   // FUA (SIS)
@@ -212,6 +214,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [selectedPacienteFichaId, setSelectedPacienteFichaId] = useState<string | null>(null);
+  const [editingPaciente, setEditingPaciente] = useState<Paciente | null>(null);
   // Por defecto, iniciar SIEMPRE en la pantalla de Login a menos que exista una sesión activa
   const [isLoggedOut, setIsLoggedOut] = useState<boolean>(() => {
     const active = sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_active_session`);
@@ -716,25 +719,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    const tempId = `pac-${Date.now()}`;
     const newPaciente: Paciente = {
       ...data,
-      id: `pac-${Date.now()}`,
+      id: tempId,
       fecha_ingreso: new Date().toISOString().split('T')[0],
     };
 
     setPacientes((prev) => [newPaciente, ...prev]);
-    // Persistir en Supabase si está enlazado
+    // Persistir en Supabase si está enlazado y reconciliar ID real
     if (isSupabaseConfigured()) {
-      supabaseService.insertPaciente(newPaciente).catch((e) => console.warn('Supabase insertPaciente error:', e));
+      supabaseService
+        .insertPaciente(newPaciente)
+        .then((realId) => {
+          if (realId && realId !== tempId) {
+            setPacientes((prev) => prev.map((p) => (p.id === tempId ? { ...p, id: realId } : p)));
+          }
+        })
+        .catch((e) => console.warn('Supabase insertPaciente error:', e));
     }
     return { success: true, message: 'Paciente registrado correctamente.' };
   };
 
-  const updatePaciente = (id: string, data: Partial<Paciente>) => {
-    setPacientes((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
-    if (isSupabaseConfigured()) {
-      supabaseService.updatePaciente(id, data).catch((e) => console.warn('Supabase updatePaciente error:', e));
+  const updatePaciente = async (id: string, data: Partial<Paciente>): Promise<{ success: boolean; error?: string }> => {
+    const actual = pacientes.find((p) => p.id === id);
+    if (!actual) {
+      return { success: false, error: 'Paciente no encontrado.' };
     }
+
+    const nextTipoDoc = data.tipo_documento ?? actual.tipo_documento;
+    const nextNumDoc = (data.numero_documento !== undefined ? data.numero_documento : actual.numero_documento)?.trim();
+    const nextHcl = (data.hcl !== undefined ? data.hcl : actual.hcl)?.trim();
+
+    if (nextTipoDoc === 'INDOCUMENTADO' && nextHcl) {
+      const existe = pacientes.some((p) => p.id !== id && p.hcl?.toLowerCase() === nextHcl.toLowerCase());
+      if (existe) {
+        return { success: false, error: `Ya existe otro paciente con HCL: ${nextHcl}.` };
+      }
+    } else if (nextTipoDoc !== 'INDOCUMENTADO' && nextNumDoc) {
+      const existe = pacientes.some(
+        (p) => p.id !== id && p.tipo_documento === nextTipoDoc && p.numero_documento?.trim() === nextNumDoc
+      );
+      if (existe) {
+        return { success: false, error: `Ya existe otro paciente registrado con ${nextTipoDoc}: ${nextNumDoc}.` };
+      }
+    }
+
+    setPacientes((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
+
+    if (isSupabaseConfigured()) {
+      const res = await supabaseService.updatePaciente(id, data);
+      if (!res.ok) {
+        return { success: false, error: res.error || 'No se pudo actualizar el paciente en Supabase.' };
+      }
+    }
+    return { success: true };
   };
 
   const deletePaciente = (id: string) => {
@@ -1290,6 +1329,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedPacienteFichaId,
         setSelectedPacienteFichaId,
         pacientes,
+        editingPaciente,
+        setEditingPaciente,
         addPaciente,
         updatePaciente,
         deletePaciente,

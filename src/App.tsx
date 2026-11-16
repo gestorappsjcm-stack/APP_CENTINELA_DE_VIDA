@@ -17,6 +17,7 @@ import { FuaView } from './components/views/FuaView';
 import { FichaPacienteView } from './components/views/FichaPacienteView';
 import { LoginView } from './components/views/LoginView';
 import { ModalRegistrarPaciente } from './components/modals/ModalRegistrarPaciente';
+import { ModalEditarPaciente } from './components/modals/ModalEditarPaciente';
 import { ModalVerPacientes } from './components/modals/ModalVerPacientes';
 import { ModalSupabaseStatus } from './components/modals/ModalSupabaseStatus';
 import { Lock, ShieldAlert, ArrowLeft } from 'lucide-react';
@@ -111,6 +112,7 @@ const AppShell: React.FC = () => {
 
       {/* Modales Globales */}
       <ModalRegistrarPaciente />
+      <ModalEditarPaciente />
       <ModalVerPacientes />
       <ModalSupabaseStatus />
     </div>

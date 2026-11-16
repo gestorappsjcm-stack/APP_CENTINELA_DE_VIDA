@@ -22,6 +22,7 @@ import {
   ExternalLink,
   PlusCircle,
   ArrowRight,
+  Edit2,
 } from 'lucide-react';
 
 export const FichaPacienteView: React.FC = () => {
@@ -29,6 +30,7 @@ export const FichaPacienteView: React.FC = () => {
     pacientes,
     selectedPacienteFichaId,
     setSelectedPacienteFichaId,
+    setEditingPaciente,
     atenciones,
     triajes,
     citas,
@@ -165,18 +167,29 @@ export const FichaPacienteView: React.FC = () => {
 
           {/* Tarjeta de Filiación Detallada */}
           <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 flex items-center justify-center font-bold text-base">
-                {(currentPaciente.apellidos_nombres || 'P').charAt(0).toUpperCase()}
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 flex items-center justify-center font-bold text-base shrink-0">
+                  {(currentPaciente.apellidos_nombres || 'P').charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white leading-tight">
+                    {currentPaciente.apellidos_nombres || 'Paciente'}
+                  </h3>
+                  <span className="font-mono text-xs text-teal-600 font-bold block mt-0.5">
+                    HCL: {currentPaciente.hcl || 'SIN ASIGNAR'}
+                  </span>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-sm text-slate-900 dark:text-white leading-tight">
-                  {currentPaciente.apellidos_nombres || 'Paciente'}
-                </h3>
-                <span className="font-mono text-xs text-teal-600 font-bold block mt-0.5">
-                  HCL: {currentPaciente.hcl || 'SIN ASIGNAR'}
-                </span>
-              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPaciente(currentPaciente)}
+                title="Editar datos de filiación del paciente"
+                className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0 print:hidden"
+              >
+                <Edit2 size={12} />
+                <span>Editar</span>
+              </button>
             </div>
 
             <div className="text-xs space-y-2 border-t border-slate-100 dark:border-slate-700 pt-3">

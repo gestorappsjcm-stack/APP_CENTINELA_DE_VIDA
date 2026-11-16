@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Paciente } from '../../types';
-import { X, Search, FileSpreadsheet, Eye, Trash2, Users, Filter } from 'lucide-react';
+import { X, Search, FileSpreadsheet, Eye, Trash2, Users, Filter, Edit2 } from 'lucide-react';
 import { ModalFichaCompletaPaciente } from './ModalFichaCompletaPaciente';
 
 export const ModalVerPacientes: React.FC = () => {
-  const { activeModal, setActiveModal, pacientes, deletePaciente } = useApp();
+  const { activeModal, setActiveModal, pacientes, setEditingPaciente, deletePaciente } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [seguroFilter, setSeguroFilter] = useState('');
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
@@ -182,9 +182,16 @@ export const ModalVerPacientes: React.FC = () => {
                           <button
                             onClick={() => setSelectedPaciente(p)}
                             title="Ver ficha completa"
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg cursor-pointer transition-colors"
                           >
                             <Eye size={15} />
+                          </button>
+                          <button
+                            onClick={() => setEditingPaciente(p)}
+                            title="Editar datos del paciente"
+                            className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-lg cursor-pointer transition-colors"
+                          >
+                            <Edit2 size={15} />
                           </button>
                           <button
                             onClick={() => {
@@ -193,7 +200,7 @@ export const ModalVerPacientes: React.FC = () => {
                               }
                             }}
                             title="Eliminar paciente"
-                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
+                            className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg cursor-pointer transition-colors"
                           >
                             <Trash2 size={15} />
                           </button>
@@ -210,7 +217,7 @@ export const ModalVerPacientes: React.FC = () => {
         {/* Ficha Completa Integral del Paciente */}
         {selectedPaciente && (
           <ModalFichaCompletaPaciente
-            paciente={selectedPaciente}
+            paciente={pacientes.find((item) => item.id === selectedPaciente.id) || selectedPaciente}
             onClose={() => setSelectedPaciente(null)}
           />
         )}

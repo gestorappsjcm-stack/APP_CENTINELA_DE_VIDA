@@ -165,19 +165,23 @@ export const supabaseService = {
           apellidos_nombres: p.apellidos_nombres || '',
           fecha_nacimiento: p.fecha_nacimiento || '',
           sexo: p.sexo || 'M',
-          edad: p.edad || 0,
-          estado_civil: p.estado_civil || 'Soltero(a)',
-          grado_instruccion: p.grado_instruccion || 'Secundaria',
+          edad: p.edad ?? undefined,
+          estado_civil: p.estado_civil || 'SOLTERO',
+          grado_instruccion: p.grado_instruccion || 'SECUNDARIA',
           seguro: p.seguro || 'SIS',
+          seguro_otro_especificar: p.seguro_otro_especificar || '',
           direccion: p.direccion || '',
-          distrito: p.distrito || 'Chincha Alta',
+          distrito: p.distrito || 'CHINCHA ALTA',
+          distrito_otro_especificar: p.distrito_otro_especificar || '',
           celular: p.celular || '',
           estado: p.estado || 'activo',
           fecha_ingreso: p.fecha_ingreso || new Date().toISOString().split('T')[0],
           tiene_tutor: Boolean(p.tiene_tutor),
           tutor_nombres: p.tutor_nombres || '',
+          tutor_tipo_documento: p.tutor_tipo_documento || 'DNI',
+          tutor_numero_documento: p.tutor_numero_documento || '',
           tutor_celular: p.tutor_celular || '',
-          tutor_parentesco: p.tutor_parentesco || '',
+          tutor_parentesco: p.tutor_parentesco || 'PADRE',
         }));
       }
     } catch (err) {
@@ -186,51 +190,119 @@ export const supabaseService = {
     return null;
   },
 
-  async insertPaciente(paciente: Paciente): Promise<boolean> {
+  async insertPaciente(paciente: Paciente): Promise<string | null> {
     const client = getSupabase();
-    if (!client) return false;
+    if (!client) return null;
     try {
-      const { error } = await client.from('cv_pacientes').insert([
-        {
-          id: paciente.id,
-          tipo_documento: paciente.tipo_documento,
-          numero_documento: paciente.numero_documento,
-          codigo_temporal: paciente.codigo_temporal,
-          hcl: paciente.hcl,
-          apellidos_nombres: paciente.apellidos_nombres,
-          fecha_nacimiento: paciente.fecha_nacimiento,
-          sexo: paciente.sexo,
-          edad: paciente.edad,
-          estado_civil: paciente.estado_civil,
-          grado_instruccion: paciente.grado_instruccion,
-          seguro: paciente.seguro,
-          direccion: paciente.direccion,
-          distrito: paciente.distrito,
-          celular: paciente.celular,
-          estado: paciente.estado,
-          fecha_ingreso: paciente.fecha_ingreso,
-          tiene_tutor: paciente.tiene_tutor,
-          tutor_nombres: paciente.tutor_nombres,
-          tutor_celular: paciente.tutor_celular,
-          tutor_parentesco: paciente.tutor_parentesco,
-        },
-      ]);
-      return !error;
+      const corePayload: Record<string, any> = {
+        tipo_documento: paciente.tipo_documento,
+        numero_documento: paciente.numero_documento || null,
+        codigo_temporal: paciente.codigo_temporal || null,
+        hcl: paciente.hcl || null,
+        apellidos_nombres: paciente.apellidos_nombres,
+        fecha_nacimiento: paciente.fecha_nacimiento || null,
+        sexo: paciente.sexo || null,
+        edad: typeof paciente.edad === 'number' ? paciente.edad : null,
+        estado_civil: paciente.estado_civil || null,
+        grado_instruccion: paciente.grado_instruccion || null,
+        seguro: paciente.seguro || null,
+        direccion: paciente.direccion || null,
+        distrito: paciente.distrito || null,
+        celular: paciente.celular || null,
+        estado: paciente.estado || 'activo',
+        fecha_ingreso: paciente.fecha_ingreso,
+        tiene_tutor: Boolean(paciente.tiene_tutor),
+        tutor_nombres: paciente.tutor_nombres || null,
+        tutor_celular: paciente.tutor_celular || null,
+        tutor_parentesco: paciente.tutor_parentesco || null,
+      };
+
+      const fullPayload: Record<string, any> = {
+        ...corePayload,
+        id: paciente.id,
+        seguro_otro_especificar: paciente.seguro_otro_especificar || null,
+        distrito_otro_especificar: paciente.distrito_otro_especificar || null,
+        tutor_tipo_documento: paciente.tutor_tipo_documento || null,
+        tutor_numero_documento: paciente.tutor_numero_documento || null,
+      };
+
+      const { data, error } = await client.from('cv_pacientes').insert([fullPayload]).select('id');
+      if (!error && data && data[0]?.id) {
+        return String(data[0].id);
+      }
+
+      // Fallback 1: columnas base con UUID generado (si id es uuid en Supabase)
+      const generatedUuid =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : undefined;
+      const fallbackPayload = generatedUuid ? { ...corePayload, id: generatedUuid } : { ...corePayload, id: paciente.id };
+      const { data: d2, error: err2 } = await client.from('cv_pacientes').insert([fallbackPayload]).select('id');
+      if (!err2 && d2 && d2[0]?.id) {
+        return String(d2[0].id);
+      }
+
+      // Fallback 2: dejar que Supabase genere el id por defecto
+      const { data: d3, error: err3 } = await client.from('cv_pacientes').insert([corePayload]).select('id');
+      if (!err3 && d3 && d3[0]?.id) {
+        return String(d3[0].id);
+      }
+
+      if (error || err2 || err3) {
+        console.warn('Error insertando paciente en Supabase:', error || err2 || err3);
+      }
+      return null;
     } catch (err) {
       console.warn('Error insertando paciente en Supabase:', err);
-      return false;
+      return null;
     }
   },
 
-  async updatePaciente(id: string, data: Partial<Paciente>): Promise<boolean> {
+  async updatePaciente(id: string, data: Partial<Paciente>): Promise<{ ok: boolean; error?: string }> {
     const client = getSupabase();
-    if (!client) return false;
+    if (!client) return { ok: true };
     try {
-      const { error } = await client.from('cv_pacientes').update(data).eq('id', id);
-      return !error;
-    } catch (err) {
+      const corePayload: Record<string, any> = {};
+      if (data.tipo_documento !== undefined) corePayload.tipo_documento = data.tipo_documento;
+      if (data.numero_documento !== undefined) corePayload.numero_documento = data.numero_documento || null;
+      if (data.codigo_temporal !== undefined) corePayload.codigo_temporal = data.codigo_temporal || null;
+      if (data.hcl !== undefined) corePayload.hcl = data.hcl || null;
+      if (data.apellidos_nombres !== undefined) corePayload.apellidos_nombres = data.apellidos_nombres;
+      if (data.fecha_nacimiento !== undefined) corePayload.fecha_nacimiento = data.fecha_nacimiento || null;
+      if (data.sexo !== undefined) corePayload.sexo = data.sexo || null;
+      if (data.edad !== undefined) corePayload.edad = typeof data.edad === 'number' ? data.edad : null;
+      if (data.estado_civil !== undefined) corePayload.estado_civil = data.estado_civil || null;
+      if (data.grado_instruccion !== undefined) corePayload.grado_instruccion = data.grado_instruccion || null;
+      if (data.seguro !== undefined) corePayload.seguro = data.seguro || null;
+      if (data.direccion !== undefined) corePayload.direccion = data.direccion || null;
+      if (data.distrito !== undefined) corePayload.distrito = data.distrito || null;
+      if (data.celular !== undefined) corePayload.celular = data.celular || null;
+      if (data.estado !== undefined) corePayload.estado = data.estado;
+      if (data.tiene_tutor !== undefined) corePayload.tiene_tutor = Boolean(data.tiene_tutor);
+      if (data.tutor_nombres !== undefined) corePayload.tutor_nombres = data.tutor_nombres || null;
+      if (data.tutor_celular !== undefined) corePayload.tutor_celular = data.tutor_celular || null;
+      if (data.tutor_parentesco !== undefined) corePayload.tutor_parentesco = data.tutor_parentesco || null;
+
+      const fullPayload: Record<string, any> = { ...corePayload };
+      if (data.seguro_otro_especificar !== undefined) fullPayload.seguro_otro_especificar = data.seguro_otro_especificar || null;
+      if (data.distrito_otro_especificar !== undefined) fullPayload.distrito_otro_especificar = data.distrito_otro_especificar || null;
+      if (data.tutor_tipo_documento !== undefined) fullPayload.tutor_tipo_documento = data.tutor_tipo_documento || null;
+      if (data.tutor_numero_documento !== undefined) fullPayload.tutor_numero_documento = data.tutor_numero_documento || null;
+
+      const { error } = await client.from('cv_pacientes').update(fullPayload).eq('id', id);
+      if (!error) return { ok: true };
+
+      // Fallback sin columnas extendidas si alguna columna opcional no existe en cv_pacientes
+      if (Object.keys(corePayload).length > 0) {
+        const { error: err2 } = await client.from('cv_pacientes').update(corePayload).eq('id', id);
+        if (!err2) return { ok: true };
+        console.warn('Error actualizando paciente en Supabase:', err2);
+        return { ok: false, error: err2.message };
+      }
+      return { ok: false, error: error.message };
+    } catch (err: any) {
       console.warn('Error actualizando paciente en Supabase:', err);
-      return false;
+      return { ok: false, error: err?.message || 'Error al actualizar paciente en Supabase' };
     }
   },
 

@@ -4,8 +4,8 @@ import { Shield, Lock, User, ArrowRight, AlertCircle, Eye, EyeOff, Sparkles, Bui
 
 export const LoginView: React.FC = () => {
   const { loginUser } = useApp();
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -140,7 +140,8 @@ export const LoginView: React.FC = () => {
                 disabled={lockoutTimer > 0}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Ej. admin"
+                placeholder="Ingrese su usuario"
+                autoComplete="username"
                 className="w-full pl-10 pr-3 py-3 bg-slate-950/80 border border-slate-700/80 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition-all disabled:opacity-50"
               />
             </div>

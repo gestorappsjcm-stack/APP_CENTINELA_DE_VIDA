@@ -22,6 +22,7 @@ import {
   PlusCircle,
   FileText,
   Ticket,
+  Edit2,
 } from 'lucide-react';
 import { Cita } from '../../types';
 import { TicketAtencionModal } from './TicketAtencionModal';
@@ -45,6 +46,7 @@ export const ModalFichaCompletaPaciente: React.FC<ModalFichaCompletaPacienteProp
     setCurrentTab,
     setSelectedPacienteFichaId,
     setActiveModal,
+    setEditingPaciente,
   } = useApp();
 
   if (!paciente) return null;
@@ -105,6 +107,15 @@ export const ModalFichaCompletaPaciente: React.FC<ModalFichaCompletaPacienteProp
           </div>
 
           <div className="flex items-center gap-2 print:hidden">
+            <button
+              type="button"
+              onClick={() => setEditingPaciente(paciente)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+              title="Editar datos del paciente (DNI, HCL, nombres, seguro...)"
+            >
+              <Edit2 size={14} />
+              <span className="hidden sm:inline">Editar Datos</span>
+            </button>
             <button
               onClick={() => window.print()}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-650 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
