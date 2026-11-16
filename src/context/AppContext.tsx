@@ -37,12 +37,12 @@ interface AppContextType {
   usuarios: Usuario[];
   addUsuario: (usuario: Omit<Usuario, 'id' | 'fechaCreacion'>) => void;
   updateUsuario: (id: string, data: Partial<Usuario>) => void;
-  deleteUsuario: (id: string) => void;
+  deleteUsuario: (id: string) => Promise<{ success: boolean; error?: string }>;
   toggleUsuarioEstado: (id: string) => void;
   canAccess: (moduleId: ModuleId) => boolean;
   isLoggedOut: boolean;
   setIsLoggedOut: (val: boolean) => void;
-  loginUser: (username: string, pass: string) => { success: boolean; error?: string };
+  loginUser: (username: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   logoutUser: () => void;
 
   // Navegación
@@ -122,6 +122,48 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_KEY = 'centinela_vida_csmc_state_v1';
+
+const verifyUserPassword = async (stored: string | undefined, input: string): Promise<boolean> => {
+  if (!stored) return true;
+  if (stored.startsWith('pbkdf2:sha256:')) {
+    const parts = stored.split('$');
+    if (parts.length !== 3) return false;
+    const iterations = parseInt(parts[0].split(':')[2] || '600000', 10);
+    const salt = parts[1];
+    const expectedHex = parts[2].toLowerCase();
+    if (typeof window !== 'undefined' && window.crypto?.subtle) {
+      try {
+        const enc = new TextEncoder();
+        const keyMaterial = await window.crypto.subtle.importKey(
+          'raw',
+          enc.encode(input),
+          'PBKDF2',
+          false,
+          ['deriveBits']
+        );
+        const derivedBits = await window.crypto.subtle.deriveBits(
+          {
+            name: 'PBKDF2',
+            salt: enc.encode(salt),
+            iterations: Number.isFinite(iterations) ? iterations : 600000,
+            hash: 'SHA-256',
+          },
+          keyMaterial,
+          (expectedHex.length / 2) * 8
+        );
+        const derivedHex = Array.from(new Uint8Array(derivedBits))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+        return derivedHex === expectedHex;
+      } catch (e) {
+        console.warn('Error verificando hash PBKDF2:', e);
+        return false;
+      }
+    }
+    return false;
+  }
+  return stored === input;
+};
 
 const DEV_USER: Usuario = {
   id: 'usr-dev',
@@ -439,7 +481,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (Array.isArray(supaProfesionales)) {
         setProfesionales(supaProfesionales);
       }
-      if (Array.isArray(supaUsuarios) && supaUsuarios.length > 0) {
+      if (Array.isArray(supaUsuarios)) {
         setUsuarios(supaUsuarios);
       }
       if (Array.isArray(supaFuas)) {
@@ -512,7 +554,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Login y Logout
-  const loginUser = (username: string, pass: string) => {
+  const loginUser = async (username: string, pass: string) => {
     const cleanUser = username.trim();
 
     if (cleanUser.toUpperCase() === 'DEV') {
@@ -538,9 +580,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (user.estado === 'inactivo') {
       return { success: false, error: 'Esta cuenta se encuentra inactiva. Contacte al Administrador.' };
     }
-    // Si tiene contraseña configurada la validamos estrictamente
-    if (user.contrasena && user.contrasena !== pass) {
-      return { success: false, error: 'Contraseña incorrecta.' };
+    // Validar contraseña (soporta texto plano y hashes pbkdf2:sha256 de Supabase)
+    if (user.contrasena) {
+      const passwordOk = await verifyUserPassword(user.contrasena, pass);
+      if (!passwordOk) {
+        return { success: false, error: 'Contraseña incorrecta.' };
+      }
     }
 
     setIsDeveloperMode(false);
@@ -1072,15 +1117,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // USUARIOS (Persistidos en la tabla cv_usuarios de Supabase)
   const addUsuario = (usuario: Omit<Usuario, 'id' | 'fechaCreacion'>) => {
+    const tempId = `usr-${Date.now()}`;
     const newUsuario: Usuario = {
       ...usuario,
-      id: `usr-${Date.now()}`,
+      id: tempId,
       fechaCreacion: new Date().toISOString().split('T')[0],
       ultimoAcceso: 'Nunca',
     };
     setUsuarios((prev) => [...prev, newUsuario]);
     if (isSupabaseConfigured()) {
-      supabaseService.insertUsuario(newUsuario).catch((e) => console.warn('Supabase insertUsuario error:', e));
+      supabaseService
+        .insertUsuario(newUsuario)
+        .then((realId) => {
+          if (realId && realId !== tempId) {
+            setUsuarios((prev) => prev.map((u) => (u.id === tempId ? { ...u, id: realId } : u)));
+          }
+        })
+        .catch((e) => console.warn('Supabase insertUsuario error:', e));
     }
   };
 
@@ -1091,12 +1144,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const deleteUsuario = (id: string) => {
-    if (usuarios.length <= 1) return;
-    setUsuarios((prev) => prev.filter((u) => u.id !== id));
-    if (isSupabaseConfigured()) {
-      supabaseService.deleteUsuario(id).catch((e) => console.warn('Supabase deleteUsuario error:', e));
+  const deleteUsuario = async (id: string): Promise<{ success: boolean; error?: string }> => {
+    const target = usuarios.find((u) => u.id === id);
+    if (!target) {
+      return { success: false, error: 'Usuario no encontrado.' };
     }
+
+    const isDev = currentUser.rol === 'desarrollador';
+    if (!isDev) {
+      if (target.id === currentUser.id) {
+        return { success: false, error: 'No puede eliminar su propia sesión activa.' };
+      }
+      if (target.rol === 'administrador') {
+        return { success: false, error: 'Solo el Desarrollador puede eliminar cuentas de Administrador.' };
+      }
+      if (usuarios.length <= 1) {
+        return { success: false, error: 'Debe quedar al menos un usuario activo en el sistema.' };
+      }
+    }
+
+    if (isSupabaseConfigured()) {
+      const res = await supabaseService.deleteUsuario(id);
+      if (!res.ok) {
+        return { success: false, error: res.error || 'No se pudo eliminar el usuario en Supabase.' };
+      }
+    }
+
+    setUsuarios((prev) => prev.filter((u) => u.id !== id));
+    return { success: true };
   };
 
   const toggleUsuarioEstado = (id: string) => {

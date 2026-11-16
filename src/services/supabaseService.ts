@@ -585,22 +585,43 @@ export const supabaseService = {
     try {
       const { data, error } = await client.from('cv_usuarios').select('*');
       if (!error && data) {
-        return data.map((u: any) => ({
-          id: String(u.id),
-          usuario: u.usuario,
-          contrasena: u.contrasena || u.password,
-          nombres: u.nombres || '',
-          apellidos: u.apellidos || '',
-          rol: u.rol || 'general',
-          correo: u.correo,
-          telefono: u.telefono,
-          estado: u.estado || 'activo',
-          permisosModulos: Array.isArray(u.permisosModulos || u.permisos_modulos)
-            ? (u.permisosModulos || u.permisos_modulos)
-            : ['dashboard', 'pacientes', 'atencion'],
-          ultimoAcceso: u.ultimoAcceso || u.ultimo_acceso,
-          fechaCreacion: u.fechaCreacion || u.fecha_creacion || new Date().toISOString().split('T')[0],
-        }));
+        return data.map((u: any) => {
+          const rawPerms = u.permisosModulos || u.permisos_modulos;
+          const rol = (u.rol || 'general') as Usuario['rol'];
+          const defaultPerms: Usuario['permisosModulos'] =
+            rol === 'administrador' || rol === 'desarrollador'
+              ? [
+                  'dashboard',
+                  'pacientes',
+                  'ficha_paciente',
+                  'fua',
+                  'agenda',
+                  'triaje',
+                  'atencion',
+                  'display_turnos',
+                  'profesionales',
+                  'programacion_turnos',
+                  'programacion_anual',
+                  'reportes',
+                  'gestion_usuarios',
+                ]
+              : ['dashboard', 'pacientes', 'ficha_paciente', 'agenda'];
+
+          return {
+            id: String(u.id),
+            usuario: u.usuario,
+            contrasena: u['contraseña'] ?? u.contrasena ?? u.password,
+            nombres: u.nombres || '',
+            apellidos: u.apellidos || '',
+            rol,
+            correo: u.correo || undefined,
+            telefono: u.telefono || undefined,
+            estado: u.estado || 'activo',
+            permisosModulos: Array.isArray(rawPerms) ? rawPerms : defaultPerms,
+            ultimoAcceso: u.ultimoAcceso || u.ultimo_acceso || undefined,
+            fechaCreacion: u.fechaCreacion || u.fecha_creacion || new Date().toISOString().split('T')[0],
+          };
+        });
       }
     } catch (err) {
       console.warn('Error al obtener usuarios de Supabase:', err);
@@ -608,33 +629,62 @@ export const supabaseService = {
     return null;
   },
 
-  async insertUsuario(usuario: Usuario): Promise<boolean> {
+  async insertUsuario(usuario: Usuario): Promise<string | null> {
     const client = getSupabase();
-    if (!client) return false;
+    if (!client) return null;
     try {
-      const payload = {
-        id: usuario.id,
+      const generatedUuid =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : undefined;
+
+      const baseMinimal: Record<string, any> = {
         usuario: usuario.usuario,
-        contrasena: usuario.contrasena || '123456',
+        contraseña: usuario.contrasena || '123456',
         nombres: usuario.nombres,
         apellidos: usuario.apellidos,
         rol: usuario.rol,
+        estado: usuario.estado,
+      };
+      if (generatedUuid) baseMinimal.id = generatedUuid;
+
+      const fullPayload: Record<string, any> = {
+        ...baseMinimal,
         correo: usuario.correo || null,
         telefono: usuario.telefono || null,
-        estado: usuario.estado,
         permisos_modulos: usuario.permisosModulos,
         fecha_creacion: usuario.fechaCreacion,
         ultimo_acceso: usuario.ultimoAcceso || null,
       };
-      const { error } = await client.from('cv_usuarios').insert([payload]);
-      if (error) {
-        console.warn('Error insertando en cv_usuarios:', error);
-        return false;
+
+      const { data, error } = await client.from('cv_usuarios').insert([fullPayload]).select('id');
+      if (!error && data && data[0]?.id) {
+        return String(data[0].id);
       }
-      return true;
+
+      // Fallback 1: solo columnas base con contraseña (por si faltan columnas opcionales)
+      const { data: d2, error: err2 } = await client.from('cv_usuarios').insert([baseMinimal]).select('id');
+      if (!err2 && d2 && d2[0]?.id) {
+        return String(d2[0].id);
+      }
+
+      // Fallback 2: usando columna contrasena sin ñ
+      const { contraseña: passVal, ...restMinimal } = baseMinimal;
+      const { data: d3, error: err3 } = await client
+        .from('cv_usuarios')
+        .insert([{ ...restMinimal, contrasena: passVal }])
+        .select('id');
+      if (!err3 && d3 && d3[0]?.id) {
+        return String(d3[0].id);
+      }
+
+      if (error || err2 || err3) {
+        console.warn('Error insertando en cv_usuarios:', error || err2 || err3);
+      }
+      return null;
     } catch (err) {
       console.warn('Excepción insertando en cv_usuarios:', err);
-      return false;
+      return null;
     }
   },
 
@@ -644,33 +694,52 @@ export const supabaseService = {
     try {
       const payload: Record<string, any> = {};
       if (data.usuario !== undefined) payload.usuario = data.usuario;
-      if (data.contrasena !== undefined) payload.contrasena = data.contrasena;
+      if (data.contrasena !== undefined) payload['contraseña'] = data.contrasena;
       if (data.nombres !== undefined) payload.nombres = data.nombres;
       if (data.apellidos !== undefined) payload.apellidos = data.apellidos;
       if (data.rol !== undefined) payload.rol = data.rol;
-      if (data.correo !== undefined) payload.correo = data.correo;
-      if (data.telefono !== undefined) payload.telefono = data.telefono;
+      if (data.correo !== undefined) payload.correo = data.correo || null;
+      if (data.telefono !== undefined) payload.telefono = data.telefono || null;
       if (data.estado !== undefined) payload.estado = data.estado;
       if (data.permisosModulos !== undefined) payload.permisos_modulos = data.permisosModulos;
       if (data.ultimoAcceso !== undefined) payload.ultimo_acceso = data.ultimoAcceso;
 
       const { error } = await client.from('cv_usuarios').update(payload).eq('id', id);
-      return !error;
+      if (!error) return true;
+
+      // Fallback sin columnas opcionales
+      const minimalPayload: Record<string, any> = {};
+      if (data.usuario !== undefined) minimalPayload.usuario = data.usuario;
+      if (data.contrasena !== undefined) minimalPayload['contraseña'] = data.contrasena;
+      if (data.nombres !== undefined) minimalPayload.nombres = data.nombres;
+      if (data.apellidos !== undefined) minimalPayload.apellidos = data.apellidos;
+      if (data.rol !== undefined) minimalPayload.rol = data.rol;
+      if (data.estado !== undefined) minimalPayload.estado = data.estado;
+
+      if (Object.keys(minimalPayload).length > 0) {
+        const { error: err2 } = await client.from('cv_usuarios').update(minimalPayload).eq('id', id);
+        return !err2;
+      }
+      return false;
     } catch (err) {
       console.warn('Error actualizando en cv_usuarios:', err);
       return false;
     }
   },
 
-  async deleteUsuario(id: string): Promise<boolean> {
+  async deleteUsuario(id: string): Promise<{ ok: boolean; error?: string }> {
     const client = getSupabase();
-    if (!client) return false;
+    if (!client) return { ok: true };
     try {
       const { error } = await client.from('cv_usuarios').delete().eq('id', id);
-      return !error;
-    } catch (err) {
-      console.warn('Error eliminando en cv_usuarios:', err);
-      return false;
+      if (error) {
+        console.warn('Error eliminando en cv_usuarios:', error);
+        return { ok: false, error: error.message };
+      }
+      return { ok: true };
+    } catch (err: any) {
+      console.warn('Excepción eliminando en cv_usuarios:', err);
+      return { ok: false, error: err?.message || 'Error al eliminar usuario en Supabase' };
     }
   },
 

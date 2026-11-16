@@ -7,6 +7,7 @@ export const LoginView: React.FC = () => {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('admin123');
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   
   // Seguridad de 3 intentos y 7 segundos de espera
@@ -29,21 +30,26 @@ export const LoginView: React.FC = () => {
     return () => clearInterval(interval);
   }, [lockoutTimer]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (lockoutTimer > 0) return;
+    if (lockoutTimer > 0 || isSubmitting) return;
     setErrorMsg('');
+    setIsSubmitting(true);
 
-    const res = loginUser(username, password);
-    if (!res.success) {
-      const nextAttempts = failedAttempts + 1;
-      setFailedAttempts(nextAttempts);
-      if (nextAttempts >= 3) {
-        setLockoutTimer(7); // 7 segundos de espera
-        setErrorMsg('Demasiados intentos fallidos. Sistema bloqueado temporalmente por seguridad.');
-      } else {
-        setErrorMsg(`${res.error || 'Error de autenticación.'} (Intento ${nextAttempts} de 3)`);
+    try {
+      const res = await loginUser(username, password);
+      if (!res.success) {
+        const nextAttempts = failedAttempts + 1;
+        setFailedAttempts(nextAttempts);
+        if (nextAttempts >= 3) {
+          setLockoutTimer(7); // 7 segundos de espera
+          setErrorMsg('Demasiados intentos fallidos. Sistema bloqueado temporalmente por seguridad.');
+        } else {
+          setErrorMsg(`${res.error || 'Error de autenticación.'} (Intento ${nextAttempts} de 3)`);
+        }
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -167,14 +173,20 @@ export const LoginView: React.FC = () => {
 
           <button
             type="submit"
-            disabled={lockoutTimer > 0}
+            disabled={lockoutTimer > 0 || isSubmitting}
             className={`w-full py-3.5 font-bold text-sm rounded-xl shadow-xl flex items-center justify-center gap-2 transition-all ${
-              lockoutTimer > 0
+              lockoutTimer > 0 || isSubmitting
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                 : 'bg-gradient-to-r from-teal-600 via-emerald-600 to-blue-600 hover:from-teal-500 hover:to-blue-500 text-white shadow-teal-950/60 cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0'
             }`}
           >
-            <span>{lockoutTimer > 0 ? `Sistema Bloqueado (${lockoutTimer}s)` : 'Ingresar al Sistema'}</span>
+            <span>
+              {lockoutTimer > 0
+                ? `Sistema Bloqueado (${lockoutTimer}s)`
+                : isSubmitting
+                ? 'Verificando...'
+                : 'Ingresar al Sistema'}
+            </span>
             <ArrowRight size={16} />
           </button>
         </form>

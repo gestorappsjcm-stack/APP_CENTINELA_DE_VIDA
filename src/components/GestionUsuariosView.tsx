@@ -59,6 +59,11 @@ export const GestionUsuariosView: React.FC = () => {
   });
 
   const [formError, setFormError] = useState<string | null>(null);
+  const [userToDelete, setUserToDelete] = useState<Usuario | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const isDeveloperActive = currentUser.rol === 'desarrollador';
 
   // Abrir modal para crear
   const handleOpenCreate = () => {
@@ -436,12 +441,11 @@ export const GestionUsuariosView: React.FC = () => {
                     <Edit2 size={15} />
                   </button>
 
-                  {u.id !== 'usr-1' && (
+                  {(isDeveloperActive || (u.rol !== 'administrador' && u.id !== 'usr-1' && u.id !== currentUser.id)) && (
                     <button
                       onClick={() => {
-                        if (confirm(`¿Eliminar al usuario @${u.usuario}?`)) {
-                          deleteUsuario(u.id);
-                        }
+                        setDeleteError(null);
+                        setUserToDelete(u);
                       }}
                       title="Eliminar usuario"
                       className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg cursor-pointer transition-colors"
@@ -455,6 +459,71 @@ export const GestionUsuariosView: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Modal de Confirmación de Eliminación */}
+      {userToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-rose-100 dark:bg-rose-950/50 text-rose-600 rounded-xl shrink-0">
+                <Trash2 size={20} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Confirmar eliminación de usuario
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  ¿Está seguro de eliminar permanentemente al usuario{' '}
+                  <strong className="font-mono text-slate-800 dark:text-slate-200">
+                    @{userToDelete.usuario}
+                  </strong>{' '}
+                  ({userToDelete.nombres} {userToDelete.apellidos} — rol{' '}
+                  <span className="capitalize font-semibold">{userToDelete.rol}</span>)?
+                </p>
+              </div>
+            </div>
+
+            {deleteError && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-xl text-xs flex items-center gap-2">
+                <AlertCircle size={15} className="shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => {
+                  setUserToDelete(null);
+                  setDeleteError(null);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg cursor-pointer transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={async () => {
+                  setIsDeleting(true);
+                  setDeleteError(null);
+                  const res = await deleteUsuario(userToDelete.id);
+                  setIsDeleting(false);
+                  if (res.success) {
+                    setUserToDelete(null);
+                  } else {
+                    setDeleteError(res.error || 'No se pudo eliminar el usuario.');
+                  }
+                }}
+                className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg shadow-sm cursor-pointer transition-all"
+              >
+                {isDeleting ? 'Eliminando...' : 'Sí, Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Creación / Edición de Usuario */}
       {isModalOpen && (
