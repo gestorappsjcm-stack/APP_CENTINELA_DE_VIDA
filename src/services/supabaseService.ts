@@ -451,7 +451,8 @@ export const supabaseService = {
           telefono: pr.telefono || '',
           correo: pr.correo || '',
           estado: pr.estado || 'ACTIVO',
-          consultorioAsignado: pr.consultorioAsignado || pr.consultorio_id,
+          consultorioAsignado: pr.consultorioAsignado || pr.consultorio_id || pr.consultorio_asignado || undefined,
+          turnoHabitual: pr.turnoHabitual || pr.turno_habitual || 'MAÑANA',
         }));
       }
     } catch (err) {
@@ -477,6 +478,9 @@ export const supabaseService = {
       if (prof.consultorioAsignado) {
         payload.consultorio_id = prof.consultorioAsignado;
       }
+      if (prof.turnoHabitual) {
+        payload.turno_habitual = prof.turnoHabitual;
+      }
 
       const { data, error } = await client.from('cv_profesionales').insert([payload]).select();
       if (!error && data && data[0]?.id) {
@@ -484,8 +488,8 @@ export const supabaseService = {
       }
 
       if (error) {
-        // Fallback sin consultorio_id por si esa columna no existe en la tabla
-        const { consultorio_id: _c, ...minimalPayload } = payload;
+        // Fallback sin consultorio_id / turno_habitual por si esas columnas no existen en la tabla
+        const { consultorio_id: _c, turno_habitual: _t, ...minimalPayload } = payload;
         const { data: d2, error: err2 } = await client
           .from('cv_profesionales')
           .insert([minimalPayload])
@@ -519,16 +523,27 @@ export const supabaseService = {
     if (!client) return false;
     try {
       const payload: Record<string, any> = {};
-      if (data.dni !== undefined) payload.dni = data.dni;
+      if (data.dni !== undefined) payload.dni = data.dni || null;
       if (data.apellidos_nombres !== undefined) payload.apellidos_nombres = data.apellidos_nombres;
       if (data.profesion !== undefined) payload.profesion = data.profesion;
-      if (data.especialidad !== undefined) payload.especialidad = data.especialidad;
-      if (data.colegiatura !== undefined) payload.colegiatura = data.colegiatura;
-      if (data.telefono !== undefined) payload.telefono = data.telefono;
-      if (data.correo !== undefined) payload.correo = data.correo;
+      if (data.especialidad !== undefined) payload.especialidad = data.especialidad || null;
+      if (data.colegiatura !== undefined) payload.colegiatura = data.colegiatura || null;
+      if (data.telefono !== undefined) payload.telefono = data.telefono || null;
+      if (data.correo !== undefined) payload.correo = data.correo || null;
       if (data.estado !== undefined) payload.estado = data.estado;
+      if (data.consultorioAsignado !== undefined) payload.consultorio_id = data.consultorioAsignado || null;
+      if (data.turnoHabitual !== undefined) payload.turno_habitual = data.turnoHabitual || null;
+
       const { error } = await client.from('cv_profesionales').update(payload).eq('id', id);
-      return !error;
+      if (!error) return true;
+
+      // Fallback si consultorio_id / turno_habitual no existen como columnas en Supabase
+      const { consultorio_id: _c, turno_habitual: _t, ...minimalPayload } = payload;
+      if (Object.keys(minimalPayload).length > 0) {
+        const { error: err2 } = await client.from('cv_profesionales').update(minimalPayload).eq('id', id);
+        return !err2;
+      }
+      return false;
     } catch (err) {
       console.warn('Error actualizando profesional en Supabase:', err);
       return false;

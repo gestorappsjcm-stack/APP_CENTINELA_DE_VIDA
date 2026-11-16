@@ -28,6 +28,7 @@ export const AgendaView: React.FC = () => {
     citas,
     pacientes,
     profesionales,
+    consultorios,
     addCita,
     updatePaciente,
     confirmarCita,
@@ -136,9 +137,17 @@ export const AgendaView: React.FC = () => {
       updatePaciente(selectedPacienteId, { seguro: citaSeguro as any });
     }
 
+    const profSeleccionado = profesionales.find((p) => p.id === citaProfId);
+    const consAsignado = profSeleccionado?.consultorioAsignado
+      ? consultorios.find(
+          (c) => c.id === profSeleccionado.consultorioAsignado || c.codigo === profSeleccionado.consultorioAsignado
+        )
+      : undefined;
+
     const res = addCita({
       paciente_id: selectedPacienteId,
       profesional_id: citaProfId || undefined,
+      consultorio_id: consAsignado?.id || undefined,
       fecha_cita: citaFecha,
       hora_cita: citaHora,
       tipo_cita: citaTipo,
@@ -826,11 +835,19 @@ export const AgendaView: React.FC = () => {
                   className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none cursor-pointer"
                 >
                   <option value="">Seleccione profesional...</option>
-                  {profesionales.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.apellidos_nombres} ({p.profesion})
-                    </option>
-                  ))}
+                  {profesionales.map((p) => {
+                    const cons = p.consultorioAsignado
+                      ? consultorios.find(
+                          (c) => c.id === p.consultorioAsignado || c.codigo === p.consultorioAsignado
+                        )
+                      : undefined;
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.apellidos_nombres} ({p.profesion}
+                        {cons ? ` • ${cons.codigo}` : ''})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 

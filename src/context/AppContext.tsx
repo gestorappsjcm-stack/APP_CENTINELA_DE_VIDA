@@ -75,6 +75,7 @@ interface AppContextType {
   // Consultorios
   consultorios: Consultorio[];
   updateConsultorio: (id: string, data: Partial<Consultorio>) => void;
+  asignarProfesionalAConsultorio: (consultorioId: string, turno: 'MAÑANA' | 'TARDE', profesionalId: string) => void;
 
   // Citas
   citas: Cita[];
@@ -702,12 +703,96 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
 
+  // Sincronizar automáticamente Consultorios con los Profesionales asignados
+  useEffect(() => {
+    setConsultorios((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        const asignados = profesionales.filter(
+          (p) =>
+            p.estado === 'ACTIVO' &&
+            p.consultorioAsignado &&
+            (p.consultorioAsignado === c.id || p.consultorioAsignado === c.codigo)
+        );
+        const profManana = asignados.find(
+          (p) => !p.turnoHabitual || p.turnoHabitual === 'MAÑANA' || p.turnoHabitual === 'ROTATIVO'
+        );
+        const profTarde =
+          asignados.find((p) => p.turnoHabitual === 'TARDE') ||
+          asignados.find((p) => p.turnoHabitual === 'ROTATIVO');
+
+        const nextMananaId = profManana?.id;
+        const nextMananaNombre = profManana?.apellidos_nombres;
+        const nextTardeId = profTarde?.id;
+        const nextTardeNombre = profTarde?.apellidos_nombres;
+
+        if (
+          c.profesional_id !== nextMananaId ||
+          c.profesional_nombre !== nextMananaNombre ||
+          c.profesional_tarde_id !== nextTardeId ||
+          c.profesional_tarde_nombre !== nextTardeNombre
+        ) {
+          changed = true;
+          return {
+            ...c,
+            profesional_id: nextMananaId,
+            profesional_nombre: nextMananaNombre,
+            profesional_tarde_id: nextTardeId,
+            profesional_tarde_nombre: nextTardeNombre,
+          };
+        }
+        return c;
+      });
+      return changed ? next : prev;
+    });
+  }, [profesionales]);
+
   // CONSULTORIOS
   const updateConsultorio = (id: string, data: Partial<Consultorio>) => {
     setConsultorios((prev) => {
       const updated = prev.map((c) => (c.id === id ? { ...c, ...data } : c));
       return updated;
     });
+  };
+
+  const asignarProfesionalAConsultorio = (
+    consultorioId: string,
+    turno: 'MAÑANA' | 'TARDE',
+    profesionalId: string
+  ) => {
+    const cons = consultorios.find((c) => c.id === consultorioId || c.codigo === consultorioId);
+    const targetConsId = cons?.id || consultorioId;
+    const targetConsCodigo = cons?.codigo || consultorioId;
+
+    setProfesionales((prev) =>
+      prev.map((p) => {
+        const estabaEnEsteSlot =
+          (p.consultorioAsignado === targetConsId || p.consultorioAsignado === targetConsCodigo) &&
+          (turno === 'MAÑANA'
+            ? !p.turnoHabitual || p.turnoHabitual === 'MAÑANA'
+            : p.turnoHabitual === 'TARDE');
+
+        if (profesionalId && p.id === profesionalId) {
+          const updated = { ...p, consultorioAsignado: targetConsId, turnoHabitual: turno };
+          if (isSupabaseConfigured()) {
+            supabaseService
+              .updateProfesional(p.id, { consultorioAsignado: targetConsId, turnoHabitual: turno })
+              .catch(() => {});
+          }
+          return updated;
+        }
+
+        if (estabaEnEsteSlot && p.id !== profesionalId) {
+          const updated = { ...p, consultorioAsignado: undefined };
+          if (isSupabaseConfigured()) {
+            supabaseService.updateProfesional(p.id, { consultorioAsignado: '' }).catch(() => {});
+          }
+          return updated;
+        }
+
+        return p;
+      })
+    );
   };
 
   // CITAS
@@ -1083,6 +1168,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteAllProfesionales,
         consultorios,
         updateConsultorio,
+        asignarProfesionalAConsultorio,
         citas,
         addCita,
         confirmarCita,

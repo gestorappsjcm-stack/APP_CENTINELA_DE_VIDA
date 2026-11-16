@@ -1,19 +1,35 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Profesional } from '../../types';
-import { UserCheck, Plus, Search, Mail, Phone, Trash2, Power } from 'lucide-react';
+import { UserCheck, Plus, Search, Mail, Phone, Trash2, Power, Building2, Edit2, Clock } from 'lucide-react';
+
+const PROFESIONES_CATALOGO = [
+  { value: 'PSIQUIATRA', label: 'Médico Psiquiatra' },
+  { value: 'MEDICO', label: 'Médico General / Familiar' },
+  { value: 'PSICOLOGO', label: 'Psicólogo(a)' },
+  { value: 'ENFERMERO', label: 'Lic. Enfermería' },
+  { value: 'TERAPEUTA_OCUPACIONAL', label: 'Terapeuta Ocupacional' },
+  { value: 'TERAPEUTA_LENGUAJE', label: 'Terapeuta de Lenguaje' },
+  { value: 'TRABAJADOR_SOCIAL', label: 'Trabajador(a) Social' },
+  { value: 'FARMACEUTICO', label: 'Químico Farmacéutico' },
+  { value: 'ADMISION_SOPORTE', label: 'Admisión / Estadística / Soporte' },
+  { value: 'OTRO', label: 'Otro Profesional' },
+];
 
 export const ProfesionalesView: React.FC = () => {
   const {
     profesionales,
+    consultorios,
     atenciones,
     addProfesional,
+    updateProfesional,
     toggleProfesional,
     deleteProfesional,
     deleteAllProfesionales,
   } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingProfId, setEditingProfId] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
@@ -23,50 +39,106 @@ export const ProfesionalesView: React.FC = () => {
   // Form State
   const [dni, setDni] = useState('');
   const [nombres, setNombres] = useState('');
-  const [profesion, setProfesion] = useState('Médico Psiquiatra');
+  const [profesion, setProfesion] = useState('PSICOLOGO');
   const [colegiatura, setColegiatura] = useState('');
   const [especialidad, setEspecialidad] = useState('');
   const [correo, setCorreo] = useState('');
   const [telefono, setTelefono] = useState('');
+  const [consultorioAsignado, setConsultorioAsignado] = useState('');
+  const [turnoHabitual, setTurnoHabitual] = useState<'MAÑANA' | 'TARDE' | 'ROTATIVO'>('MAÑANA');
 
   const filtrados = profesionales.filter((p) => {
     const term = searchTerm.toLowerCase();
+    const cons = consultorios.find((c) => c.id === p.consultorioAsignado || c.codigo === p.consultorioAsignado);
     return (
       p.apellidos_nombres.toLowerCase().includes(term) ||
       p.profesion.toLowerCase().includes(term) ||
       (p.dni && p.dni.toLowerCase().includes(term)) ||
-      (p.colegiatura && p.colegiatura.toLowerCase().includes(term))
+      (p.colegiatura && p.colegiatura.toLowerCase().includes(term)) ||
+      (cons && `${cons.codigo} ${cons.nombre}`.toLowerCase().includes(term))
     );
   });
+
+  const openCreateModal = () => {
+    setEditingProfId(null);
+    setFormError('');
+    setDni('');
+    setNombres('');
+    setProfesion('PSICOLOGO');
+    setColegiatura('');
+    setEspecialidad('');
+    setCorreo('');
+    setTelefono('');
+    setConsultorioAsignado('');
+    setTurnoHabitual('MAÑANA');
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (p: Profesional) => {
+    const cons = consultorios.find((c) => c.id === p.consultorioAsignado || c.codigo === p.consultorioAsignado);
+    setEditingProfId(p.id);
+    setFormError('');
+    setDni(p.dni || '');
+    setNombres(p.apellidos_nombres || '');
+    setProfesion(p.profesion || 'PSICOLOGO');
+    setColegiatura(p.colegiatura || '');
+    setEspecialidad(p.especialidad || '');
+    setCorreo(p.correo || '');
+    setTelefono(p.telefono || '');
+    setConsultorioAsignado(cons?.id || p.consultorioAsignado || '');
+    setTurnoHabitual(p.turnoHabitual || 'MAÑANA');
+    setIsModalOpen(true);
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
     if (!nombres.trim()) return;
 
-    const res = addProfesional({
-      dni: dni.trim() || undefined,
-      apellidos_nombres: nombres.trim().toUpperCase(),
-      profesion,
-      colegiatura: colegiatura.trim() || undefined,
-      especialidad: especialidad.trim() || undefined,
-      correo: correo.trim() || undefined,
-      telefono: telefono.trim() || undefined,
-      estado: 'ACTIVO',
-    });
+    if (editingProfId) {
+      updateProfesional(editingProfId, {
+        dni: dni.trim() || undefined,
+        apellidos_nombres: nombres.trim().toUpperCase(),
+        profesion,
+        colegiatura: colegiatura.trim() || undefined,
+        especialidad: especialidad.trim() || undefined,
+        correo: correo.trim() || undefined,
+        telefono: telefono.trim() || undefined,
+        consultorioAsignado: consultorioAsignado || undefined,
+        turnoHabitual,
+      });
+      setStatusMessage({ type: 'ok', text: 'Profesional y asignación de consultorio actualizados.' });
+    } else {
+      const res = addProfesional({
+        dni: dni.trim() || undefined,
+        apellidos_nombres: nombres.trim().toUpperCase(),
+        profesion,
+        colegiatura: colegiatura.trim() || undefined,
+        especialidad: especialidad.trim() || undefined,
+        correo: correo.trim() || undefined,
+        telefono: telefono.trim() || undefined,
+        estado: 'ACTIVO',
+        consultorioAsignado: consultorioAsignado || undefined,
+        turnoHabitual,
+      });
 
-    if (!res.success) {
-      setFormError(res.error || 'No se pudo registrar al profesional.');
-      return;
+      if (!res.success) {
+        setFormError(res.error || 'No se pudo registrar al profesional.');
+        return;
+      }
+      setStatusMessage({ type: 'ok', text: 'Profesional registrado y vinculado al consultorio seleccionado.' });
     }
 
     setIsModalOpen(false);
+    setEditingProfId(null);
     setDni('');
     setNombres('');
     setColegiatura('');
     setEspecialidad('');
     setCorreo('');
     setTelefono('');
+    setConsultorioAsignado('');
+    setTurnoHabitual('MAÑANA');
   };
 
   const handleConfirmDeleteAll = async () => {
@@ -140,7 +212,7 @@ export const ProfesionalesView: React.FC = () => {
           )}
 
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={openCreateModal}
             className="flex items-center gap-2 bg-[#1A2B4A] hover:bg-[#243b5e] text-white px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer shadow-md transition-all"
           >
             <Plus size={16} />
@@ -194,6 +266,9 @@ export const ProfesionalesView: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtrados.map((p) => {
             const atencionesRealizadas = atenciones.filter((a) => a.profesional_id === p.id).length;
+            const consAsignado = consultorios.find(
+              (c) => c.id === p.consultorioAsignado || c.codigo === p.consultorioAsignado
+            );
 
             return (
               <div
@@ -212,7 +287,7 @@ export const ProfesionalesView: React.FC = () => {
                           {p.apellidos_nombres}
                         </h4>
                         <div className="text-xs text-teal-700 dark:text-teal-400 font-semibold mt-0.5">
-                          {p.profesion}
+                          {PROFESIONES_CATALOGO.find((pr) => pr.value === p.profesion)?.label || p.profesion}
                         </div>
                       </div>
                     </div>
@@ -226,6 +301,28 @@ export const ProfesionalesView: React.FC = () => {
                     >
                       {p.estado}
                     </span>
+                  </div>
+
+                  {/* Badge Consultorio Asignado */}
+                  <div
+                    className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs ${
+                      consAsignado
+                        ? 'bg-teal-50/70 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800 text-teal-900 dark:text-teal-200'
+                        : 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Building2 size={13} className="shrink-0" />
+                      <span className="font-bold truncate">
+                        {consAsignado ? `${consAsignado.codigo} — ${consAsignado.nombre}` : 'Sin consultorio asignado'}
+                      </span>
+                    </div>
+                    {consAsignado && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-white/80 dark:bg-slate-900/60 shrink-0">
+                        <Clock size={10} />
+                        {p.turnoHabitual || 'MAÑANA'}
+                      </span>
+                    )}
                   </div>
 
                   <div className="text-xs text-slate-500 space-y-1 bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl">
@@ -273,7 +370,16 @@ export const ProfesionalesView: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-3 mt-3 border-t border-slate-100 dark:border-slate-700/60">
+                <div className="flex items-center justify-end gap-1.5 pt-3 mt-3 border-t border-slate-100 dark:border-slate-700/60">
+                  <button
+                    type="button"
+                    onClick={() => openEditModal(p)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950/40 cursor-pointer"
+                    title="Editar datos o asignar consultorio"
+                  >
+                    <Edit2 size={12} />
+                    <span>Editar / Consultorio</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => toggleProfesional(p.id)}
@@ -321,12 +427,12 @@ export const ProfesionalesView: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Registrar */}
+      {/* Modal Registrar / Editar */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-2xl shadow-2xl p-6 space-y-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-2xl shadow-2xl p-6 space-y-4 my-auto">
             <h3 className="font-bold text-base text-slate-900 dark:text-white">
-              Registrar Nuevo Profesional de Salud
+              {editingProfId ? 'Editar Profesional y Asignación de Consultorio' : 'Registrar Nuevo Profesional de Salud'}
             </h3>
 
             {formError && (
@@ -363,18 +469,17 @@ export const ProfesionalesView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold mb-1">Profesión</label>
+                  <label className="block font-semibold mb-1">Profesión *</label>
                   <select
                     value={profesion}
                     onChange={(e) => setProfesion(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg"
                   >
-                    <option value="Médico Psiquiatra">Médico Psiquiatra</option>
-                    <option value="Médico General">Médico General</option>
-                    <option value="Psicólogo(a)">Psicólogo(a)</option>
-                    <option value="Lic. Enfermería">Lic. Enfermería</option>
-                    <option value="Terapeuta Ocupacional">Terapeuta Ocupacional</option>
-                    <option value="Trabajador(a) Social">Trabajador(a) Social</option>
+                    {PROFESIONES_CATALOGO.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -387,6 +492,47 @@ export const ProfesionalesView: React.FC = () => {
                     onChange={(e) => setColegiatura(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-mono"
                   />
+                </div>
+              </div>
+
+              {/* Asignación a Consultorio y Turno */}
+              <div className="p-3 rounded-xl bg-teal-50/70 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800 space-y-2.5">
+                <div className="flex items-center gap-1.5 font-bold text-teal-900 dark:text-teal-200">
+                  <Building2 size={14} />
+                  <span>Asignación de Consultorio y Turno (6 horas)</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="sm:col-span-2">
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
+                      Consultorio Asignado
+                    </label>
+                    <select
+                      value={consultorioAsignado}
+                      onChange={(e) => setConsultorioAsignado(e.target.value)}
+                      className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-700 rounded-lg font-semibold"
+                    >
+                      <option value="">-- Sin consultorio asignado --</option>
+                      {consultorios.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.codigo} — {c.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
+                      Turno Habitual
+                    </label>
+                    <select
+                      value={turnoHabitual}
+                      onChange={(e) => setTurnoHabitual(e.target.value as 'MAÑANA' | 'TARDE' | 'ROTATIVO')}
+                      className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-700 rounded-lg font-semibold"
+                    >
+                      <option value="MAÑANA">Mañana (08:00 - 14:00)</option>
+                      <option value="TARDE">Tarde (14:00 - 20:00)</option>
+                      <option value="ROTATIVO">Rotativo (M/T)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -437,7 +583,7 @@ export const ProfesionalesView: React.FC = () => {
                   type="submit"
                   className="px-4 py-1.5 font-bold bg-[#1A2B4A] hover:bg-[#243b5e] text-white rounded-lg cursor-pointer"
                 >
-                  Guardar Profesional
+                  {editingProfId ? 'Guardar Cambios' : 'Guardar Profesional'}
                 </button>
               </div>
             </form>

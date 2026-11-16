@@ -566,7 +566,14 @@ export const AtencionView: React.FC = () => {
     if (!cita) return;
 
     const prof =
-      profesionales.find((p) => p.id === cita.profesional_id) || profesionales[0];
+      profesionales.find((p) => p.id === cita.profesional_id) ||
+      profesionales.find(
+        (p) =>
+          p.id === consultorioActual?.profesional_id ||
+          p.consultorioAsignado === consultorioActual?.id ||
+          p.consultorioAsignado === consultorioActual?.codigo
+      ) ||
+      profesionales[0];
     const triajeCita = triajes.find((t) => t.cita_id === cita.id);
 
     const examenTexto = [
@@ -586,7 +593,7 @@ export const AtencionView: React.FC = () => {
     const nuevaAtencionData = {
       cita_id: cita.id,
       paciente_id: cita.paciente_id,
-      profesional_id: prof.id,
+      profesional_id: prof?.id || '',
       consultorio_id: selectedConsultorioId,
       presion_arterial: triajeCita?.presion_arterial || '120/80',
       peso: triajeCita?.peso?.toString() || '65',
@@ -770,7 +777,7 @@ export const AtencionView: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                    {cons.profesional_nombre}
+                    {cons.profesional_nombre || cons.profesional_tarde_nombre || 'Sin profesional asignado'}
                   </p>
                   {tienePendientes ? (
                     <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 mt-1">
@@ -1194,12 +1201,20 @@ export const AtencionView: React.FC = () => {
             </div>
 
             <div className="text-xs space-y-2 text-slate-600 dark:text-slate-300">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Profesional a cargo:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  {consultorioActual?.profesional_nombre}
+              <div className="flex justify-between gap-2">
+                <span className="text-slate-400">Turno Mañana (08-14h):</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200 text-right">
+                  {consultorioActual?.profesional_nombre || 'Sin asignar'}
                 </span>
               </div>
+              {consultorioActual?.profesional_tarde_nombre && (
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400">Turno Tarde (14-20h):</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200 text-right">
+                    {consultorioActual.profesional_tarde_nombre}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-slate-400">Piso / Ubicación:</span>
                 <span className="font-medium">{consultorioActual?.piso}</span>
