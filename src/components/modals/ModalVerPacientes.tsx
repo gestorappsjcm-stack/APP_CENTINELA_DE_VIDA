@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Paciente } from '../../types';
 import { X, Search, FileSpreadsheet, Eye, Trash2, Users, Filter, Edit2 } from 'lucide-react';
 import { ModalFichaCompletaPaciente } from './ModalFichaCompletaPaciente';
+import { formatDistritoPaciente } from '../../lib/distritosHelper';
 
 export const ModalVerPacientes: React.FC = () => {
   const { activeModal, setActiveModal, pacientes, setEditingPaciente, deletePaciente } = useApp();
@@ -33,7 +34,7 @@ export const ModalVerPacientes: React.FC = () => {
       p.edad ? `${p.edad} años` : '-',
       p.sexo || '-',
       p.seguro || '-',
-      p.distrito || '-',
+      `"${formatDistritoPaciente(p)}"`,
       p.celular || '-',
       p.estado,
     ]);
@@ -165,7 +166,7 @@ export const ModalVerPacientes: React.FC = () => {
                           {p.seguro || 'NINGUNO'}
                         </span>
                       </td>
-                      <td className="py-3 px-3 text-slate-500">{p.distrito || '-'}</td>
+                      <td className="py-3 px-3 text-slate-500">{formatDistritoPaciente(p)}</td>
                       <td className="py-3 px-3 text-center">
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${

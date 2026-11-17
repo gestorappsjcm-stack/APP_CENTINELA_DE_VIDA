@@ -59,6 +59,7 @@ export const GestionUsuariosView: React.FC = () => {
   });
 
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [userToDelete, setUserToDelete] = useState<Usuario | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -146,7 +147,7 @@ export const GestionUsuariosView: React.FC = () => {
   };
 
   // Guardar usuario
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -168,43 +169,56 @@ export const GestionUsuariosView: React.FC = () => {
 
     // Verificar usuario único
     const existeUsuario = usuarios.some(
-      (u) => u.usuario.toLowerCase() === formData.usuario.toLowerCase() && u.id !== editingUserId
+      (u) => u.usuario.toLowerCase() === formData.usuario.trim().toLowerCase() && u.id !== editingUserId
     );
     if (existeUsuario) {
       setFormError(`El nombre de usuario "${formData.usuario}" ya está en uso.`);
       return;
     }
 
-    if (editingUserId) {
-      const updates: Partial<Usuario> = {
-        nombres: formData.nombres.trim(),
-        apellidos: formData.apellidos.trim(),
-        usuario: formData.usuario.trim().toLowerCase(),
-        rol: formData.rol,
-        correo: formData.correo.trim() || undefined,
-        telefono: formData.telefono.trim() || undefined,
-        estado: formData.estado,
-        permisosModulos: formData.permisosModulos,
-      };
-      if (formData.contrasena.trim()) {
-        updates.contrasena = formData.contrasena.trim();
+    setIsSaving(true);
+    try {
+      if (editingUserId) {
+        const updates: Partial<Usuario> = {
+          nombres: formData.nombres.trim(),
+          apellidos: formData.apellidos.trim(),
+          usuario: formData.usuario.trim().toLowerCase(),
+          rol: formData.rol,
+          correo: formData.correo.trim() || undefined,
+          telefono: formData.telefono.trim() || undefined,
+          estado: formData.estado,
+          permisosModulos: formData.permisosModulos,
+        };
+        if (formData.contrasena.trim()) {
+          updates.contrasena = formData.contrasena.trim();
+        }
+        const res = await updateUsuario(editingUserId, updates);
+        if (!res.success) {
+          setFormError(res.error || 'No se pudo actualizar el usuario en Supabase.');
+          return;
+        }
+      } else {
+        const res = await addUsuario({
+          nombres: formData.nombres.trim(),
+          apellidos: formData.apellidos.trim(),
+          usuario: formData.usuario.trim().toLowerCase(),
+          contrasena: formData.contrasena.trim(),
+          rol: formData.rol,
+          correo: formData.correo.trim() || undefined,
+          telefono: formData.telefono.trim() || undefined,
+          estado: formData.estado,
+          permisosModulos: formData.permisosModulos,
+        });
+        if (!res.success) {
+          setFormError(res.error || 'No se pudo registrar el usuario en Supabase.');
+          return;
+        }
       }
-      updateUsuario(editingUserId, updates);
-    } else {
-      addUsuario({
-        nombres: formData.nombres.trim(),
-        apellidos: formData.apellidos.trim(),
-        usuario: formData.usuario.trim().toLowerCase(),
-        contrasena: formData.contrasena.trim(),
-        rol: formData.rol,
-        correo: formData.correo.trim() || undefined,
-        telefono: formData.telefono.trim() || undefined,
-        estado: formData.estado,
-        permisosModulos: formData.permisosModulos,
-      });
-    }
 
-    setIsModalOpen(false);
+      setIsModalOpen(false);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Filtrado de usuarios
@@ -760,16 +774,22 @@ export const GestionUsuariosView: React.FC = () => {
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg cursor-pointer transition-colors"
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-bold bg-[#1A2B4A] hover:bg-[#243b5e] text-white rounded-lg shadow-md cursor-pointer transition-all"
+                  disabled={isSaving}
+                  className="px-5 py-2 text-xs font-bold bg-[#1A2B4A] hover:bg-[#243b5e] text-white rounded-lg shadow-md cursor-pointer transition-all disabled:opacity-60"
                 >
-                  {editingUserId ? 'Guardar Cambios' : 'Crear Usuario'}
+                  {isSaving
+                    ? 'Guardando...'
+                    : editingUserId
+                      ? 'Guardar Cambios'
+                      : 'Crear Usuario'}
                 </button>
               </div>
             </form>

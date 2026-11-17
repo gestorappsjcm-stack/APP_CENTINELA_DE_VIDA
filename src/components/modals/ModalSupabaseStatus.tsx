@@ -14,6 +14,9 @@ import {
   Key,
   Globe,
   Trash2,
+  Copy,
+  Check,
+  Terminal,
 } from 'lucide-react';
 import {
   SUPABASE_METADATA,
@@ -21,6 +24,36 @@ import {
   saveSupabaseCredentials,
   clearSupabaseCredentials,
 } from '../../lib/supabase';
+
+const RLS_FIX_SQL = `-- Ejecutar en Supabase SQL Editor (permite leer/guardar/editar/eliminar desde la app)
+DO $$
+DECLARE
+  t text;
+  tablas text[] := ARRAY[
+    'cv_pacientes',
+    'cv_profesionales',
+    'cv_usuarios',
+    'cv_citas',
+    'cv_triajes',
+    'cv_atenciones',
+    'cv_fua_historial',
+    'cv_fua_contador',
+    'cv_consultorios',
+    'cv_configuracion'
+  ];
+BEGIN
+  FOREACH t IN ARRAY tablas LOOP
+    IF to_regclass('public.' || t) IS NOT NULL THEN
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO anon, authenticated;', t);
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', t);
+      EXECUTE format('DROP POLICY IF EXISTS "Permitir acceso app centinela" ON public.%I;', t);
+      EXECUTE format(
+        'CREATE POLICY "Permitir acceso app centinela" ON public.%I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);',
+        t
+      );
+    END IF;
+  END LOOP;
+END $$;`;
 
 export const ModalSupabaseStatus: React.FC = () => {
   const {
@@ -37,12 +70,18 @@ export const ModalSupabaseStatus: React.FC = () => {
   const [inputKey, setInputKey] = useState('');
   const [showConfigInputs, setShowConfigInputs] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [formErrorMsg, setFormErrorMsg] = useState<string | null>(null);
+  const [showRlsSql, setShowRlsSql] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
     if (activeModal === 'supabaseStatus') {
       const creds = getStoredCredentials();
       setInputUrl(creds.url);
       setInputKey(creds.key);
+      setFormErrorMsg(null);
+      setConfirmClear(false);
       if (!creds.url || !creds.key) {
         setShowConfigInputs(true);
       }
@@ -53,8 +92,9 @@ export const ModalSupabaseStatus: React.FC = () => {
 
   const handleSaveAndConnect = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormErrorMsg(null);
     if (!inputUrl.trim() || !inputKey.trim()) {
-      alert('Por favor complete la URL y el Anon Key de Supabase.');
+      setFormErrorMsg('Por favor complete la URL y el Anon Key de Supabase.');
       return;
     }
     saveSupabaseCredentials(inputUrl.trim(), inputKey.trim());
@@ -64,12 +104,21 @@ export const ModalSupabaseStatus: React.FC = () => {
   };
 
   const handleClearCredentials = async () => {
-    if (confirm('¿Desea limpiar las credenciales locales de Supabase?')) {
-      clearSupabaseCredentials();
-      setInputUrl('');
-      setInputKey('');
-      setShowConfigInputs(true);
-      await syncWithSupabase();
+    clearSupabaseCredentials();
+    setInputUrl('');
+    setInputKey('');
+    setConfirmClear(false);
+    setShowConfigInputs(true);
+    await syncWithSupabase();
+  };
+
+  const handleCopySql = async () => {
+    try {
+      await navigator.clipboard.writeText(RLS_FIX_SQL);
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 2500);
+    } catch {
+      setShowRlsSql(true);
     }
   };
 
@@ -143,6 +192,52 @@ export const ModalSupabaseStatus: React.FC = () => {
             </div>
           )}
 
+          {formErrorMsg && (
+            <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle size={16} className="text-rose-600 shrink-0" />
+              <span>{formErrorMsg}</span>
+            </div>
+          )}
+
+          {/* Solución RLS para escritura desde la App */}
+          <div className="bg-amber-50/70 dark:bg-amber-950/20 p-4 rounded-xl border border-amber-200 dark:border-amber-800/60 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                  <ShieldCheck size={14} className="text-amber-600" />
+                  Permisos RLS en Supabase (Solución si falla el guardado)
+                </h4>
+                <p className="text-[11px] text-amber-800/90 dark:text-amber-300/90 mt-0.5">
+                  Si ves <code className="font-mono font-semibold">violates row-level security policy</code>, ejecuta este script en <strong>Supabase → SQL Editor</strong>.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRlsSql((prev) => !prev)}
+                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 hover:bg-amber-100/60 flex items-center gap-1 cursor-pointer"
+                >
+                  <Terminal size={12} />
+                  <span>{showRlsSql ? 'Ocultar SQL' : 'Ver Script SQL'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopySql}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-1 cursor-pointer shadow-xs"
+                >
+                  {copiedSql ? <Check size={12} /> : <Copy size={12} />}
+                  <span>{copiedSql ? 'Copiado' : 'Copiar SQL'}</span>
+                </button>
+              </div>
+            </div>
+
+            {showRlsSql && (
+              <pre className="p-3 rounded-lg bg-slate-900 text-emerald-300 text-[10.5px] font-mono overflow-x-auto leading-relaxed border border-slate-700">
+                {RLS_FIX_SQL}
+              </pre>
+            )}
+          </div>
+
           {/* Formulario de Credenciales de Supabase */}
           <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
             <div className="flex items-center justify-between">
@@ -195,7 +290,7 @@ export const ModalSupabaseStatus: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button
                     type="submit"
                     disabled={isSyncing}
@@ -205,14 +300,33 @@ export const ModalSupabaseStatus: React.FC = () => {
                     <span>Guardar y Conectar a Supabase</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={handleClearCredentials}
-                    className="px-3 py-2 bg-slate-200 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-slate-700 hover:text-rose-700 dark:text-slate-300 dark:hover:text-rose-300 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
-                  >
-                    <Trash2 size={13} />
-                    <span>Limpiar</span>
-                  </button>
+                  {confirmClear ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleClearCredentials}
+                        className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+                      >
+                        Confirmar limpieza
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmClear(false)}
+                        className="px-2.5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmClear(true)}
+                      className="px-3 py-2 bg-slate-200 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-slate-700 hover:text-rose-700 dark:text-slate-300 dark:hover:text-rose-300 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <Trash2 size={13} />
+                      <span>Limpiar</span>
+                    </button>
+                  )}
                 </div>
               </form>
             ) : (

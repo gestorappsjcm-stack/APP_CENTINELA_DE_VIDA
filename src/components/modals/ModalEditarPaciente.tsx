@@ -12,6 +12,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { supabaseService } from '../../services/supabaseService';
+import { DISTRITOS_CHINCHA, parseDistritoParaFormulario } from '../../lib/distritosHelper';
 
 export const ModalEditarPaciente: React.FC = () => {
   const { editingPaciente, setEditingPaciente, updatePaciente, pacientes } = useApp();
@@ -68,8 +69,12 @@ export const ModalEditarPaciente: React.FC = () => {
     setSeguro(editingPaciente.seguro || 'SIS');
     setSeguroOtro(editingPaciente.seguro_otro_especificar || '');
     setDireccion(editingPaciente.direccion || '');
-    setDistrito(editingPaciente.distrito || 'CHINCHA ALTA');
-    setDistritoOtro(editingPaciente.distrito_otro_especificar || '');
+    const parsedDist = parseDistritoParaFormulario(
+      editingPaciente.distrito,
+      editingPaciente.distrito_otro_especificar
+    );
+    setDistrito(parsedDist.distrito);
+    setDistritoOtro(parsedDist.distritoOtro);
     setCelular(editingPaciente.celular || '');
     setEstado(editingPaciente.estado || 'activo');
 
@@ -225,6 +230,11 @@ export const ModalEditarPaciente: React.FC = () => {
       return;
     }
 
+    if (distrito === 'OTRO' && !distritoOtro.trim()) {
+      setFormError('Por favor especifique el distrito o lugar de procedencia del paciente.');
+      return;
+    }
+
     setIsSaving(true);
     const res = await updatePaciente(editingPaciente.id, {
       tipo_documento: tipoDoc,
@@ -241,7 +251,7 @@ export const ModalEditarPaciente: React.FC = () => {
       seguro_otro_especificar: seguro === 'OTRO' ? seguroOtro.trim() : undefined,
       direccion: direccion.trim() || undefined,
       distrito,
-      distrito_otro_especificar: distrito === 'OTRO' ? distritoOtro.trim() : undefined,
+      distrito_otro_especificar: distrito === 'OTRO' ? distritoOtro.trim().toUpperCase() : undefined,
       celular: celular.trim() || undefined,
       estado,
       tiene_tutor: tieneTutor,
@@ -573,18 +583,18 @@ export const ModalEditarPaciente: React.FC = () => {
               </label>
               <select
                 value={distrito}
-                onChange={(e) => setDistrito(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDistrito(val);
+                  if (val !== 'OTRO') setDistritoOtro('');
+                }}
                 className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500 cursor-pointer"
               >
-                <option value="CHINCHA ALTA">Chincha Alta</option>
-                <option value="PUEBLO NUEVO">Pueblo Nuevo</option>
-                <option value="SUNAMPE">Sunampe</option>
-                <option value="GROCIO PRADO">Grocio Prado</option>
-                <option value="ALTO LARAN">Alto Larán</option>
-                <option value="EL CARMEN">El Carmen</option>
-                <option value="TAMBO DE MORA">Tambo de Mora</option>
-                <option value="CHAVIN">Chavín</option>
-                <option value="OTRO">Otro</option>
+                {DISTRITOS_CHINCHA.map((d) => (
+                  <option key={d.value} value={d.value}>
+                    {d.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -617,16 +627,17 @@ export const ModalEditarPaciente: React.FC = () => {
           </div>
 
           {distrito === 'OTRO' && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Especifique Distrito
+            <div className="p-3 bg-teal-50/60 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-800 rounded-xl">
+              <label className="block text-xs font-semibold text-teal-900 dark:text-teal-200 mb-1">
+                Especifique distrito / provincia / procedencia *
               </label>
               <input
                 type="text"
+                required
                 value={distritoOtro}
                 onChange={(e) => setDistritoOtro(e.target.value)}
-                placeholder="Nombre del distrito"
-                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500"
+                placeholder="Ej: Pisco, San Clemente, Cañete, Ica, Lima..."
+                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-700 rounded-lg focus:outline-none focus:border-teal-500 uppercase"
               />
             </div>
           )}

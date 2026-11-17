@@ -14,6 +14,7 @@ import {
   Database,
   Info,
 } from 'lucide-react';
+import { formatDistritoPaciente } from '../lib/distritosHelper';
 
 export const ReportesView: React.FC = () => {
   const { pacientes, atenciones, triajes, profesionales, citas, isSupabaseConfigured, supabaseStatus } = useApp();
@@ -115,7 +116,7 @@ export const ReportesView: React.FC = () => {
   // 5. Distribución real por Distrito
   const distritosMap = new Map<string, number>();
   pacientesPeriodo.forEach((p) => {
-    const dist = (p.distrito || 'NO ESPECIFICADO').trim().toUpperCase();
+    const dist = formatDistritoPaciente(p, true);
     distritosMap.set(dist, (distritosMap.get(dist) || 0) + 1);
   });
 

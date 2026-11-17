@@ -34,6 +34,7 @@ export const ProfesionalesView: React.FC = () => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // Form State
@@ -90,55 +91,64 @@ export const ProfesionalesView: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
     if (!nombres.trim()) return;
 
-    if (editingProfId) {
-      updateProfesional(editingProfId, {
-        dni: dni.trim() || undefined,
-        apellidos_nombres: nombres.trim().toUpperCase(),
-        profesion,
-        colegiatura: colegiatura.trim() || undefined,
-        especialidad: especialidad.trim() || undefined,
-        correo: correo.trim() || undefined,
-        telefono: telefono.trim() || undefined,
-        consultorioAsignado: consultorioAsignado || undefined,
-        turnoHabitual,
-      });
-      setStatusMessage({ type: 'ok', text: 'Profesional y asignación de consultorio actualizados.' });
-    } else {
-      const res = addProfesional({
-        dni: dni.trim() || undefined,
-        apellidos_nombres: nombres.trim().toUpperCase(),
-        profesion,
-        colegiatura: colegiatura.trim() || undefined,
-        especialidad: especialidad.trim() || undefined,
-        correo: correo.trim() || undefined,
-        telefono: telefono.trim() || undefined,
-        estado: 'ACTIVO',
-        consultorioAsignado: consultorioAsignado || undefined,
-        turnoHabitual,
-      });
+    setIsSaving(true);
+    try {
+      if (editingProfId) {
+        const res = await updateProfesional(editingProfId, {
+          dni: dni.trim() || undefined,
+          apellidos_nombres: nombres.trim().toUpperCase(),
+          profesion,
+          colegiatura: colegiatura.trim() || undefined,
+          especialidad: especialidad.trim() || undefined,
+          correo: correo.trim() || undefined,
+          telefono: telefono.trim() || undefined,
+          consultorioAsignado: consultorioAsignado || undefined,
+          turnoHabitual,
+        });
+        if (!res.success) {
+          setFormError(res.error || 'No se pudo actualizar al profesional.');
+          return;
+        }
+        setStatusMessage({ type: 'ok', text: 'Profesional y asignación de consultorio actualizados.' });
+      } else {
+        const res = await addProfesional({
+          dni: dni.trim() || undefined,
+          apellidos_nombres: nombres.trim().toUpperCase(),
+          profesion,
+          colegiatura: colegiatura.trim() || undefined,
+          especialidad: especialidad.trim() || undefined,
+          correo: correo.trim() || undefined,
+          telefono: telefono.trim() || undefined,
+          estado: 'ACTIVO',
+          consultorioAsignado: consultorioAsignado || undefined,
+          turnoHabitual,
+        });
 
-      if (!res.success) {
-        setFormError(res.error || 'No se pudo registrar al profesional.');
-        return;
+        if (!res.success) {
+          setFormError(res.error || 'No se pudo registrar al profesional.');
+          return;
+        }
+        setStatusMessage({ type: 'ok', text: 'Profesional registrado y guardado correctamente en Supabase.' });
       }
-      setStatusMessage({ type: 'ok', text: 'Profesional registrado y vinculado al consultorio seleccionado.' });
-    }
 
-    setIsModalOpen(false);
-    setEditingProfId(null);
-    setDni('');
-    setNombres('');
-    setColegiatura('');
-    setEspecialidad('');
-    setCorreo('');
-    setTelefono('');
-    setConsultorioAsignado('');
-    setTurnoHabitual('MAÑANA');
+      setIsModalOpen(false);
+      setEditingProfId(null);
+      setDni('');
+      setNombres('');
+      setColegiatura('');
+      setEspecialidad('');
+      setCorreo('');
+      setTelefono('');
+      setConsultorioAsignado('');
+      setTurnoHabitual('MAÑANA');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleConfirmDeleteAll = async () => {
@@ -574,16 +584,22 @@ export const ProfesionalesView: React.FC = () => {
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-700">
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={() => setIsModalOpen(false)}
-                  className="px-3.5 py-1.5 font-semibold text-slate-500 hover:bg-slate-100 rounded-lg"
+                  className="px-3.5 py-1.5 font-semibold text-slate-500 hover:bg-slate-100 rounded-lg disabled:opacity-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 font-bold bg-[#1A2B4A] hover:bg-[#243b5e] text-white rounded-lg cursor-pointer"
+                  disabled={isSaving}
+                  className="px-4 py-1.5 font-bold bg-[#1A2B4A] hover:bg-[#243b5e] text-white rounded-lg cursor-pointer disabled:opacity-60"
                 >
-                  {editingProfId ? 'Guardar Cambios' : 'Guardar Profesional'}
+                  {isSaving
+                    ? 'Guardando...'
+                    : editingProfId
+                      ? 'Guardar Cambios'
+                      : 'Guardar Profesional'}
                 </button>
               </div>
             </form>

@@ -16,6 +16,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { supabaseService } from '../../services/supabaseService';
+import { DISTRITOS_CHINCHA } from '../../lib/distritosHelper';
 
 export const ModalRegistrarPaciente: React.FC = () => {
   const { activeModal, setActiveModal, addPaciente, pacientes, setCurrentTab, setSelectedPacienteFichaId } = useApp();
@@ -226,6 +227,11 @@ export const ModalRegistrarPaciente: React.FC = () => {
       return;
     }
 
+    if (distrito === 'OTRO' && !distritoOtro.trim()) {
+      setFormError('Por favor especifique el distrito o lugar de procedencia del paciente.');
+      return;
+    }
+
     setIsSaving(true);
     const res = await addPaciente({
       tipo_documento: tipoDoc,
@@ -242,7 +248,7 @@ export const ModalRegistrarPaciente: React.FC = () => {
       seguro_otro_especificar: seguro === 'OTRO' ? seguroOtro : undefined,
       direccion: direccion.trim() || undefined,
       distrito: distrito,
-      distrito_otro_especificar: distrito === 'OTRO' ? distritoOtro : undefined,
+      distrito_otro_especificar: distrito === 'OTRO' ? distritoOtro.trim().toUpperCase() : undefined,
       celular: celular.trim() || undefined,
       estado: 'activo',
       tiene_tutor: tieneTutor,
@@ -613,18 +619,18 @@ export const ModalRegistrarPaciente: React.FC = () => {
               </label>
               <select
                 value={distrito}
-                onChange={(e) => setDistrito(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDistrito(val);
+                  if (val !== 'OTRO') setDistritoOtro('');
+                }}
                 className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500 cursor-pointer"
               >
-                <option value="CHINCHA ALTA">Chincha Alta</option>
-                <option value="PUEBLO NUEVO">Pueblo Nuevo</option>
-                <option value="SUNAMPE">Sunampe</option>
-                <option value="GROCIO PRADO">Grocio Prado</option>
-                <option value="ALTO LARAN">Alto Larán</option>
-                <option value="EL CARMEN">El Carmen</option>
-                <option value="TAMBO DE MORA">Tambo de Mora</option>
-                <option value="CHAVIN">Chavín</option>
-                <option value="OTRO">Otro</option>
+                {DISTRITOS_CHINCHA.map((d) => (
+                  <option key={d.value} value={d.value}>
+                    {d.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -655,6 +661,22 @@ export const ModalRegistrarPaciente: React.FC = () => {
               />
             </div>
           </div>
+
+          {distrito === 'OTRO' && (
+            <div className="p-3 bg-teal-50/60 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-800 rounded-xl">
+              <label className="block text-xs font-semibold text-teal-900 dark:text-teal-200 mb-1">
+                Especifique distrito / provincia / procedencia *
+              </label>
+              <input
+                type="text"
+                required
+                value={distritoOtro}
+                onChange={(e) => setDistritoOtro(e.target.value)}
+                placeholder="Ej: Pisco, San Clemente, Cañete, Ica, Lima..."
+                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-700 rounded-lg focus:outline-none focus:border-teal-500 uppercase"
+              />
+            </div>
+          )}
 
           {/* Sección Tutor / Familiar */}
           <div className="p-4 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">

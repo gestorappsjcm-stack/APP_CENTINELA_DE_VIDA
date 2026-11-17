@@ -35,8 +35,8 @@ interface AppContextType {
   isDeveloperMode: boolean;
   developerUser: Usuario;
   usuarios: Usuario[];
-  addUsuario: (usuario: Omit<Usuario, 'id' | 'fechaCreacion'>) => void;
-  updateUsuario: (id: string, data: Partial<Usuario>) => void;
+  addUsuario: (usuario: Omit<Usuario, 'id' | 'fechaCreacion'>) => Promise<{ success: boolean; error?: string }>;
+  updateUsuario: (id: string, data: Partial<Usuario>) => Promise<{ success: boolean; error?: string }>;
   deleteUsuario: (id: string) => Promise<{ success: boolean; error?: string }>;
   toggleUsuarioEstado: (id: string) => void;
   canAccess: (moduleId: ModuleId) => boolean;
@@ -71,8 +71,8 @@ interface AppContextType {
 
   // Profesionales
   profesionales: Profesional[];
-  addProfesional: (prof: Omit<Profesional, 'id'>) => { success: boolean; error?: string };
-  updateProfesional: (id: string, data: Partial<Profesional>) => void;
+  addProfesional: (prof: Omit<Profesional, 'id'>) => Promise<{ success: boolean; error?: string }>;
+  updateProfesional: (id: string, data: Partial<Profesional>) => Promise<{ success: boolean; error?: string }>;
   toggleProfesional: (id: string) => void;
   deleteProfesional: (id: string) => void;
   deleteAllProfesionales: () => Promise<{ success: boolean; error?: string }>;
@@ -767,14 +767,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    setPacientes((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
-
     if (isSupabaseConfigured()) {
       const res = await supabaseService.updatePaciente(id, data);
       if (!res.ok) {
         return { success: false, error: res.error || 'No se pudo actualizar el paciente en Supabase.' };
       }
     }
+
+    setPacientes((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
     return { success: true };
   };
 
@@ -786,7 +786,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // PROFESIONALES
-  const addProfesional = (prof: Omit<Profesional, 'id'>) => {
+  const addProfesional = async (
+    prof: Omit<Profesional, 'id'>
+  ): Promise<{ success: boolean; error?: string }> => {
     const cleanDni = prof.dni?.trim();
     if (cleanDni && profesionales.some((p) => p.dni === cleanDni)) {
       return { success: false, error: `Ya existe un profesional con DNI: ${cleanDni}` };
@@ -797,27 +799,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       dni: cleanDni || undefined,
       id: tempId,
     };
-    setProfesionales((prev) => [...prev, newProf]);
 
     if (isSupabaseConfigured()) {
-      supabaseService
-        .insertProfesional(newProf)
-        .then((realId) => {
-          if (realId && realId !== tempId) {
-            setProfesionales((prev) => prev.map((p) => (p.id === tempId ? { ...p, id: realId } : p)));
-          }
-        })
-        .catch((e) => console.warn('Supabase insertProfesional error:', e));
+      const res = await supabaseService.insertProfesional(newProf);
+      if (!res.id) {
+        return {
+          success: false,
+          error: res.error || 'No se pudo guardar el profesional en la base de datos Supabase.',
+        };
+      }
+      newProf.id = res.id;
     }
 
+    setProfesionales((prev) => [...prev, newProf]);
     return { success: true };
   };
 
-  const updateProfesional = (id: string, data: Partial<Profesional>) => {
-    setProfesionales((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
-    if (isSupabaseConfigured()) {
-      supabaseService.updateProfesional(id, data).catch((e) => console.warn('Supabase updateProfesional error:', e));
+  const updateProfesional = async (
+    id: string,
+    data: Partial<Profesional>
+  ): Promise<{ success: boolean; error?: string }> => {
+    const cleanDni = data.dni?.trim();
+    if (cleanDni && profesionales.some((p) => p.id !== id && p.dni === cleanDni)) {
+      return { success: false, error: `Ya existe otro profesional con DNI: ${cleanDni}` };
     }
+
+    if (isSupabaseConfigured()) {
+      const res = await supabaseService.updateProfesional(id, data);
+      if (!res.ok) {
+        return {
+          success: false,
+          error: res.error || 'No se pudo actualizar el profesional en Supabase.',
+        };
+      }
+    }
+
+    setProfesionales((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
+    return { success: true };
   };
 
   const toggleProfesional = (id: string) => {
@@ -1157,32 +1175,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // USUARIOS (Persistidos en la tabla cv_usuarios de Supabase)
-  const addUsuario = (usuario: Omit<Usuario, 'id' | 'fechaCreacion'>) => {
+  const addUsuario = async (
+    usuario: Omit<Usuario, 'id' | 'fechaCreacion'>
+  ): Promise<{ success: boolean; error?: string }> => {
+    const cleanUsername = usuario.usuario.trim().toLowerCase();
+    if (cleanUsername === 'dev') {
+      return { success: false, error: 'El nombre de usuario "DEV" está reservado para el sistema.' };
+    }
+    if (usuarios.some((u) => u.usuario.toLowerCase() === cleanUsername)) {
+      return { success: false, error: `El nombre de usuario "${usuario.usuario}" ya está en uso.` };
+    }
+
     const tempId = `usr-${Date.now()}`;
     const newUsuario: Usuario = {
       ...usuario,
+      usuario: cleanUsername,
       id: tempId,
       fechaCreacion: new Date().toISOString().split('T')[0],
       ultimoAcceso: 'Nunca',
     };
-    setUsuarios((prev) => [...prev, newUsuario]);
+
     if (isSupabaseConfigured()) {
-      supabaseService
-        .insertUsuario(newUsuario)
-        .then((realId) => {
-          if (realId && realId !== tempId) {
-            setUsuarios((prev) => prev.map((u) => (u.id === tempId ? { ...u, id: realId } : u)));
-          }
-        })
-        .catch((e) => console.warn('Supabase insertUsuario error:', e));
+      const res = await supabaseService.insertUsuario(newUsuario);
+      if (!res.id) {
+        return {
+          success: false,
+          error: res.error || 'No se pudo guardar el usuario en la base de datos Supabase.',
+        };
+      }
+      newUsuario.id = res.id;
     }
+
+    setUsuarios((prev) => [...prev, newUsuario]);
+    return { success: true };
   };
 
-  const updateUsuario = (id: string, data: Partial<Usuario>) => {
-    setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, ...data } : u)));
+  const updateUsuario = async (
+    id: string,
+    data: Partial<Usuario>
+  ): Promise<{ success: boolean; error?: string }> => {
     if (isSupabaseConfigured()) {
-      supabaseService.updateUsuario(id, data).catch((e) => console.warn('Supabase updateUsuario error:', e));
+      const res = await supabaseService.updateUsuario(id, data);
+      if (!res.ok) {
+        return {
+          success: false,
+          error: res.error || 'No se pudo actualizar el usuario en Supabase.',
+        };
+      }
     }
+
+    setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, ...data } : u)));
+    return { success: true };
   };
 
   const deleteUsuario = async (id: string): Promise<{ success: boolean; error?: string }> => {

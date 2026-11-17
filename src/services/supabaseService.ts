@@ -11,6 +11,25 @@ export interface SupabaseDashboardStats {
   citasPorAtender?: number;
 }
 
+const formatSupabaseWriteError = (
+  table: string,
+  err: any,
+  fallbackMsg: string
+): { isRls: boolean; message: string } => {
+  const rawMsg = String(err?.message || '');
+  const isRls =
+    err?.code === '42501' ||
+    rawMsg.toLowerCase().includes('row-level security') ||
+    rawMsg.toLowerCase().includes('violates row-level security');
+  if (isRls) {
+    return {
+      isRls: true,
+      message: `Permiso denegado por política RLS en "${table}" (${rawMsg}). Abre "Supabase Conectado" en la barra superior para copiar el script SQL de políticas RLS y ejecútalo en el SQL Editor de Supabase.`,
+    };
+  }
+  return { isRls: false, message: rawMsg || fallbackMsg };
+};
+
 export const supabaseService = {
   // Test de conexión robusto multivariable
   async checkConnection(): Promise<{ connected: boolean; message: string; details?: any }> {
@@ -199,6 +218,11 @@ export const supabaseService = {
           ? crypto.randomUUID()
           : undefined;
 
+      const distritoFallback =
+        paciente.distrito === 'OTRO' && paciente.distrito_otro_especificar?.trim()
+          ? `OTRO: ${paciente.distrito_otro_especificar.trim().toUpperCase()}`
+          : paciente.distrito || null;
+
       const bareMinimal: Record<string, any> = {
         tipo_documento: paciente.tipo_documento,
         numero_documento: paciente.numero_documento || null,
@@ -209,7 +233,7 @@ export const supabaseService = {
         sexo: paciente.sexo || null,
         seguro: paciente.seguro || 'SIS',
         direccion: paciente.direccion || null,
-        distrito: paciente.distrito || null,
+        distrito: distritoFallback,
         celular: paciente.celular || null,
         estado: paciente.estado || 'activo',
       };
@@ -229,6 +253,7 @@ export const supabaseService = {
       const fullPayload: Record<string, any> = {
         ...corePayload,
         ...(generatedUuid ? { id: generatedUuid } : {}),
+        distrito: paciente.distrito || null,
         seguro_otro_especificar: paciente.seguro_otro_especificar || null,
         distrito_otro_especificar: paciente.distrito_otro_especificar || null,
         tutor_tipo_documento: paciente.tutor_tipo_documento || null,
@@ -236,22 +261,29 @@ export const supabaseService = {
       };
 
       const { data, error } = await client.from('cv_pacientes').insert([fullPayload]).select('id');
-      if (!error && data && data[0]?.id) {
-        return { id: String(data[0].id) };
+      if (!error) {
+        const savedId = data?.[0]?.id ? String(data[0].id) : generatedUuid || null;
+        if (savedId) return { id: savedId };
+      }
+      if (error) {
+        const rlsCheck = formatSupabaseWriteError('cv_pacientes', error, '');
+        if (rlsCheck.isRls) return { id: null, error: rlsCheck.message };
       }
 
       // Fallback 1: columnas base con UUID generado
       const coreWithId = generatedUuid ? { ...corePayload, id: generatedUuid } : corePayload;
       const { data: d2, error: err2 } = await client.from('cv_pacientes').insert([coreWithId]).select('id');
-      if (!err2 && d2 && d2[0]?.id) {
-        return { id: String(d2[0].id) };
+      if (!err2) {
+        const savedId = d2?.[0]?.id ? String(d2[0].id) : generatedUuid || null;
+        if (savedId) return { id: savedId };
       }
 
       // Fallback 2: columnas mínimas con UUID generado
       const minimalWithId = generatedUuid ? { ...bareMinimal, id: generatedUuid } : bareMinimal;
       const { data: d3, error: err3 } = await client.from('cv_pacientes').insert([minimalWithId]).select('id');
-      if (!err3 && d3 && d3[0]?.id) {
-        return { id: String(d3[0].id) };
+      if (!err3) {
+        const savedId = d3?.[0]?.id ? String(d3[0].id) : generatedUuid || null;
+        if (savedId) return { id: savedId };
       }
 
       // Fallback 3: sin campo id (dejar que PostgreSQL asigne id por defecto)
@@ -262,10 +294,16 @@ export const supabaseService = {
 
       const lastErr = err4 || err3 || err2 || error;
       console.warn('Error insertando paciente en Supabase:', lastErr);
-      return { id: null, error: lastErr?.message || 'No se pudo guardar el paciente en Supabase.' };
+      return {
+        id: null,
+        error: formatSupabaseWriteError('cv_pacientes', lastErr, 'No se pudo guardar el paciente en Supabase.').message,
+      };
     } catch (err: any) {
       console.warn('Error insertando paciente en Supabase:', err);
-      return { id: null, error: err?.message || 'Error al insertar paciente en Supabase.' };
+      return {
+        id: null,
+        error: formatSupabaseWriteError('cv_pacientes', err, 'Error al insertar paciente en Supabase.').message,
+      };
     }
   },
 
@@ -303,17 +341,33 @@ export const supabaseService = {
       const { error } = await client.from('cv_pacientes').update(fullPayload).eq('id', id);
       if (!error) return { ok: true };
 
+      const rlsCheck = formatSupabaseWriteError('cv_pacientes', error, '');
+      if (rlsCheck.isRls) return { ok: false, error: rlsCheck.message };
+
       // Fallback sin columnas extendidas si alguna columna opcional no existe en cv_pacientes
       if (Object.keys(corePayload).length > 0) {
-        const { error: err2 } = await client.from('cv_pacientes').update(corePayload).eq('id', id);
+        const fallbackUpdate = { ...corePayload };
+        if (data.distrito === 'OTRO' && data.distrito_otro_especificar?.trim()) {
+          fallbackUpdate.distrito = `OTRO: ${data.distrito_otro_especificar.trim().toUpperCase()}`;
+        }
+        const { error: err2 } = await client.from('cv_pacientes').update(fallbackUpdate).eq('id', id);
         if (!err2) return { ok: true };
         console.warn('Error actualizando paciente en Supabase:', err2);
-        return { ok: false, error: err2.message };
+        return {
+          ok: false,
+          error: formatSupabaseWriteError('cv_pacientes', err2, 'No se pudo actualizar el paciente en Supabase.').message,
+        };
       }
-      return { ok: false, error: error.message };
+      return {
+        ok: false,
+        error: formatSupabaseWriteError('cv_pacientes', error, 'No se pudo actualizar el paciente en Supabase.').message,
+      };
     } catch (err: any) {
       console.warn('Error actualizando paciente en Supabase:', err);
-      return { ok: false, error: err?.message || 'Error al actualizar paciente en Supabase' };
+      return {
+        ok: false,
+        error: formatSupabaseWriteError('cv_pacientes', err, 'Error al actualizar paciente en Supabase').message,
+      };
     }
   },
 
@@ -544,11 +598,16 @@ export const supabaseService = {
     return null;
   },
 
-  async insertProfesional(prof: Profesional): Promise<string | null> {
+  async insertProfesional(prof: Profesional): Promise<{ id: string | null; error?: string }> {
     const client = getSupabase();
-    if (!client) return null;
+    if (!client) return { id: prof.id };
     try {
-      const payload: Record<string, any> = {
+      const generatedUuid =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : undefined;
+
+      const minimalPayload: Record<string, any> = {
         dni: prof.dni || null,
         apellidos_nombres: prof.apellidos_nombres,
         profesion: prof.profesion,
@@ -558,78 +617,109 @@ export const supabaseService = {
         correo: prof.correo || null,
         estado: prof.estado || 'ACTIVO',
       };
+
+      const fullPayload: Record<string, any> = {
+        ...minimalPayload,
+        ...(generatedUuid ? { id: generatedUuid } : {}),
+      };
       if (prof.consultorioAsignado) {
-        payload.consultorio_id = prof.consultorioAsignado;
+        fullPayload.consultorio_id = prof.consultorioAsignado;
       }
       if (prof.turnoHabitual) {
-        payload.turno_habitual = prof.turnoHabitual;
+        fullPayload.turno_habitual = prof.turnoHabitual;
       }
 
-      const { data, error } = await client.from('cv_profesionales').insert([payload]).select();
-      if (!error && data && data[0]?.id) {
-        return String(data[0].id);
+      // 1. Intento completo con UUID explícito y consultorio_id/turno_habitual
+      const { data, error } = await client.from('cv_profesionales').insert([fullPayload]).select('id');
+      if (!error) {
+        const savedId = data?.[0]?.id ? String(data[0].id) : generatedUuid || null;
+        if (savedId) return { id: savedId };
       }
-
       if (error) {
-        // Fallback sin consultorio_id / turno_habitual por si esas columnas no existen en la tabla
-        const { consultorio_id: _c, turno_habitual: _t, ...minimalPayload } = payload;
-        const { data: d2, error: err2 } = await client
-          .from('cv_profesionales')
-          .insert([minimalPayload])
-          .select();
-        if (!err2 && d2 && d2[0]?.id) {
-          return String(d2[0].id);
-        }
-        // Segundo fallback generando UUID explícito si la columna id no tiene default
-        const generatedUuid =
-          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-            ? crypto.randomUUID()
-            : undefined;
-        if (generatedUuid) {
-          const { data: d3, error: err3 } = await client
-            .from('cv_profesionales')
-            .insert([{ ...minimalPayload, id: generatedUuid }])
-            .select();
-          if (!err3 && d3 && d3[0]?.id) {
-            return String(d3[0].id);
-          }
-        }
+        const rlsCheck = formatSupabaseWriteError('cv_profesionales', error, '');
+        if (rlsCheck.isRls) return { id: null, error: rlsCheck.message };
       }
-    } catch (err) {
+
+      // 2. Fallback sin consultorio_id / turno_habitual, manteniendo UUID explícito
+      const minimalWithId = generatedUuid ? { ...minimalPayload, id: generatedUuid } : minimalPayload;
+      const { data: d2, error: err2 } = await client
+        .from('cv_profesionales')
+        .insert([minimalWithId])
+        .select('id');
+      if (!err2) {
+        const savedId = d2?.[0]?.id ? String(d2[0].id) : generatedUuid || null;
+        if (savedId) return { id: savedId };
+      }
+
+      // 3. Fallback sin campo id (dejar que PostgreSQL use su default)
+      const { data: d3, error: err3 } = await client
+        .from('cv_profesionales')
+        .insert([minimalPayload])
+        .select('id');
+      if (!err3 && d3 && d3[0]?.id) {
+        return { id: String(d3[0].id) };
+      }
+
+      const lastErr = err3 || err2 || error;
+      console.warn('Error insertando profesional en Supabase:', lastErr);
+      return {
+        id: null,
+        error: formatSupabaseWriteError('cv_profesionales', lastErr, 'No se pudo guardar el profesional en Supabase.').message,
+      };
+    } catch (err: any) {
       console.warn('Error insertando profesional en Supabase:', err);
+      return {
+        id: null,
+        error: formatSupabaseWriteError('cv_profesionales', err, 'Error al insertar profesional en Supabase.').message,
+      };
     }
-    return null;
   },
 
-  async updateProfesional(id: string, data: Partial<Profesional>): Promise<boolean> {
+  async updateProfesional(id: string, data: Partial<Profesional>): Promise<{ ok: boolean; error?: string }> {
     const client = getSupabase();
-    if (!client) return false;
+    if (!client) return { ok: true };
     try {
-      const payload: Record<string, any> = {};
-      if (data.dni !== undefined) payload.dni = data.dni || null;
-      if (data.apellidos_nombres !== undefined) payload.apellidos_nombres = data.apellidos_nombres;
-      if (data.profesion !== undefined) payload.profesion = data.profesion;
-      if (data.especialidad !== undefined) payload.especialidad = data.especialidad || null;
-      if (data.colegiatura !== undefined) payload.colegiatura = data.colegiatura || null;
-      if (data.telefono !== undefined) payload.telefono = data.telefono || null;
-      if (data.correo !== undefined) payload.correo = data.correo || null;
-      if (data.estado !== undefined) payload.estado = data.estado;
+      const minimalPayload: Record<string, any> = {};
+      if (data.dni !== undefined) minimalPayload.dni = data.dni || null;
+      if (data.apellidos_nombres !== undefined) minimalPayload.apellidos_nombres = data.apellidos_nombres;
+      if (data.profesion !== undefined) minimalPayload.profesion = data.profesion;
+      if (data.especialidad !== undefined) minimalPayload.especialidad = data.especialidad || null;
+      if (data.colegiatura !== undefined) minimalPayload.colegiatura = data.colegiatura || null;
+      if (data.telefono !== undefined) minimalPayload.telefono = data.telefono || null;
+      if (data.correo !== undefined) minimalPayload.correo = data.correo || null;
+      if (data.estado !== undefined) minimalPayload.estado = data.estado;
+
+      const payload: Record<string, any> = { ...minimalPayload };
       if (data.consultorioAsignado !== undefined) payload.consultorio_id = data.consultorioAsignado || null;
       if (data.turnoHabitual !== undefined) payload.turno_habitual = data.turnoHabitual || null;
 
       const { error } = await client.from('cv_profesionales').update(payload).eq('id', id);
-      if (!error) return true;
+      if (!error) return { ok: true };
+
+      const rlsCheck = formatSupabaseWriteError('cv_profesionales', error, '');
+      if (rlsCheck.isRls) return { ok: false, error: rlsCheck.message };
 
       // Fallback si consultorio_id / turno_habitual no existen como columnas en Supabase
-      const { consultorio_id: _c, turno_habitual: _t, ...minimalPayload } = payload;
       if (Object.keys(minimalPayload).length > 0) {
         const { error: err2 } = await client.from('cv_profesionales').update(minimalPayload).eq('id', id);
-        return !err2;
+        if (!err2) return { ok: true };
+        console.warn('Error actualizando profesional en Supabase:', err2);
+        return {
+          ok: false,
+          error: formatSupabaseWriteError('cv_profesionales', err2, 'No se pudo actualizar el profesional en Supabase.').message,
+        };
       }
-      return false;
-    } catch (err) {
+      console.warn('Error actualizando profesional en Supabase:', error);
+      return {
+        ok: false,
+        error: formatSupabaseWriteError('cv_profesionales', error, 'No se pudo actualizar el profesional en Supabase.').message,
+      };
+    } catch (err: any) {
       console.warn('Error actualizando profesional en Supabase:', err);
-      return false;
+      return {
+        ok: false,
+        error: formatSupabaseWriteError('cv_profesionales', err, 'Error al actualizar profesional en Supabase.').message,
+      };
     }
   },
 
@@ -712,9 +802,9 @@ export const supabaseService = {
     return null;
   },
 
-  async insertUsuario(usuario: Usuario): Promise<string | null> {
+  async insertUsuario(usuario: Usuario): Promise<{ id: string | null; error?: string }> {
     const client = getSupabase();
-    if (!client) return null;
+    if (!client) return { id: usuario.id };
     try {
       const generatedUuid =
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -741,14 +831,20 @@ export const supabaseService = {
       };
 
       const { data, error } = await client.from('cv_usuarios').insert([fullPayload]).select('id');
-      if (!error && data && data[0]?.id) {
-        return String(data[0].id);
+      if (!error) {
+        const savedId = data?.[0]?.id ? String(data[0].id) : generatedUuid || null;
+        if (savedId) return { id: savedId };
+      }
+      if (error) {
+        const rlsCheck = formatSupabaseWriteError('cv_usuarios', error, '');
+        if (rlsCheck.isRls) return { id: null, error: rlsCheck.message };
       }
 
       // Fallback 1: solo columnas base con contraseña (por si faltan columnas opcionales)
       const { data: d2, error: err2 } = await client.from('cv_usuarios').insert([baseMinimal]).select('id');
-      if (!err2 && d2 && d2[0]?.id) {
-        return String(d2[0].id);
+      if (!err2) {
+        const savedId = d2?.[0]?.id ? String(d2[0].id) : generatedUuid || null;
+        if (savedId) return { id: savedId };
       }
 
       // Fallback 2: usando columna contrasena sin ñ
@@ -757,23 +853,29 @@ export const supabaseService = {
         .from('cv_usuarios')
         .insert([{ ...restMinimal, contrasena: passVal }])
         .select('id');
-      if (!err3 && d3 && d3[0]?.id) {
-        return String(d3[0].id);
+      if (!err3) {
+        const savedId = d3?.[0]?.id ? String(d3[0].id) : generatedUuid || null;
+        if (savedId) return { id: savedId };
       }
 
-      if (error || err2 || err3) {
-        console.warn('Error insertando en cv_usuarios:', error || err2 || err3);
-      }
-      return null;
-    } catch (err) {
+      const lastErr = err3 || err2 || error;
+      console.warn('Error insertando en cv_usuarios:', lastErr);
+      return {
+        id: null,
+        error: formatSupabaseWriteError('cv_usuarios', lastErr, 'No se pudo guardar el usuario en Supabase.').message,
+      };
+    } catch (err: any) {
       console.warn('Excepción insertando en cv_usuarios:', err);
-      return null;
+      return {
+        id: null,
+        error: formatSupabaseWriteError('cv_usuarios', err, 'Error al insertar usuario en Supabase.').message,
+      };
     }
   },
 
-  async updateUsuario(id: string, data: Partial<Usuario>): Promise<boolean> {
+  async updateUsuario(id: string, data: Partial<Usuario>): Promise<{ ok: boolean; error?: string }> {
     const client = getSupabase();
-    if (!client) return false;
+    if (!client) return { ok: true };
     try {
       const payload: Record<string, any> = {};
       if (data.usuario !== undefined) payload.usuario = data.usuario;
@@ -788,7 +890,10 @@ export const supabaseService = {
       if (data.ultimoAcceso !== undefined) payload.ultimo_acceso = data.ultimoAcceso;
 
       const { error } = await client.from('cv_usuarios').update(payload).eq('id', id);
-      if (!error) return true;
+      if (!error) return { ok: true };
+
+      const rlsCheck = formatSupabaseWriteError('cv_usuarios', error, '');
+      if (rlsCheck.isRls) return { ok: false, error: rlsCheck.message };
 
       // Fallback sin columnas opcionales
       const minimalPayload: Record<string, any> = {};
@@ -801,12 +906,24 @@ export const supabaseService = {
 
       if (Object.keys(minimalPayload).length > 0) {
         const { error: err2 } = await client.from('cv_usuarios').update(minimalPayload).eq('id', id);
-        return !err2;
+        if (!err2) return { ok: true };
+        console.warn('Error actualizando en cv_usuarios:', err2);
+        return {
+          ok: false,
+          error: formatSupabaseWriteError('cv_usuarios', err2, 'No se pudo actualizar el usuario en Supabase.').message,
+        };
       }
-      return false;
-    } catch (err) {
+      console.warn('Error actualizando en cv_usuarios:', error);
+      return {
+        ok: false,
+        error: formatSupabaseWriteError('cv_usuarios', error, 'No se pudo actualizar el usuario en Supabase.').message,
+      };
+    } catch (err: any) {
       console.warn('Error actualizando en cv_usuarios:', err);
-      return false;
+      return {
+        ok: false,
+        error: formatSupabaseWriteError('cv_usuarios', err, 'Error al actualizar usuario en Supabase.').message,
+      };
     }
   },
 

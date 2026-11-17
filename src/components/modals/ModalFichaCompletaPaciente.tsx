@@ -2,6 +2,7 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { Paciente } from '../../types';
 import { parseMedicamentosList } from '../../lib/medicamentosHelper';
+import { formatDistritoPaciente } from '../../lib/distritosHelper';
 import {
   X,
   User,
@@ -224,7 +225,7 @@ export const ModalFichaCompletaPaciente: React.FC<ModalFichaCompletaPacienteProp
               <div>
                 <span className="text-[11px] text-slate-500 block">Distrito</span>
                 <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  {paciente.distrito || 'Chincha Alta'}
+                  {formatDistritoPaciente(paciente)}
                 </span>
               </div>
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Paciente } from '../../types';
 import { parseMedicamentosList } from '../../lib/medicamentosHelper';
+import { formatDistritoPaciente } from '../../lib/distritosHelper';
 import {
   FileText,
   User,
@@ -239,7 +240,7 @@ export const FichaPacienteView: React.FC = () => {
               <div className="flex justify-between">
                 <span className="text-slate-400">Distrito:</span>
                 <span className="font-medium text-slate-800 dark:text-slate-200">
-                  {currentPaciente.distrito || 'Chincha Alta'}
+                  {formatDistritoPaciente(currentPaciente)}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -325,7 +326,7 @@ export const FichaPacienteView: React.FC = () => {
                   <div className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl space-y-1">
                     <span className="text-[10px] uppercase font-bold text-slate-400">Seguro y Residencia:</span>
                     <p className="font-semibold text-slate-800 dark:text-slate-200">
-                      Seguro: <span className="font-bold text-teal-700 dark:text-teal-300">{currentPaciente.seguro}</span> • Distrito: {currentPaciente.distrito || 'Chincha Alta'}
+                      Seguro: <span className="font-bold text-teal-700 dark:text-teal-300">{currentPaciente.seguro}</span> • Distrito: {formatDistritoPaciente(currentPaciente)}
                     </p>
                   </div>
                 </div>
