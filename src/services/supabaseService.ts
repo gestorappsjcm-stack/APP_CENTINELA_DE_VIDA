@@ -30,6 +30,15 @@ const formatSupabaseWriteError = (
   return { isRls: false, message: rawMsg || fallbackMsg };
 };
 
+const extractMissingSchemaColumn = (err: any): string | null => {
+  const msg = String(err?.message || '');
+  const pgrstMatch = msg.match(/Could not find the '([^']+)' column/i);
+  if (pgrstMatch?.[1]) return pgrstMatch[1];
+  const pgMatch = msg.match(/column "([^"]+)" of relation "[^"]+" does not exist/i);
+  if (pgMatch?.[1]) return pgMatch[1];
+  return null;
+};
+
 export const supabaseService = {
   // Test de conexión robusto multivariable
   async checkConnection(): Promise<{ connected: boolean; message: string; details?: any }> {
@@ -260,25 +269,34 @@ export const supabaseService = {
         tutor_numero_documento: paciente.tutor_numero_documento || null,
       };
 
-      const { data, error } = await client.from('cv_pacientes').insert([fullPayload]).select('id');
-      if (!error) {
-        const savedId = data?.[0]?.id ? String(data[0].id) : generatedUuid || null;
-        if (savedId) return { id: savedId };
-      }
-      if (error) {
-        const rlsCheck = formatSupabaseWriteError('cv_pacientes', error, '');
-        if (rlsCheck.isRls) return { id: null, error: rlsCheck.message };
+      const workingPayload: Record<string, any> = { ...fullPayload };
+      let lastError: any = null;
+
+      for (let attempt = 0; attempt < 16; attempt++) {
+        const { data, error } = await client.from('cv_pacientes').insert([workingPayload]).select('id');
+        if (!error) {
+          const savedId = data?.[0]?.id ? String(data[0].id) : generatedUuid || null;
+          if (savedId) return { id: savedId };
+        }
+        lastError = error;
+
+        if (error) {
+          const rlsCheck = formatSupabaseWriteError('cv_pacientes', error, '');
+          if (rlsCheck.isRls) return { id: null, error: rlsCheck.message };
+
+          const missingCol = extractMissingSchemaColumn(error);
+          if (missingCol && missingCol in workingPayload) {
+            if (missingCol === 'distrito_otro_especificar' && 'distrito' in workingPayload) {
+              workingPayload.distrito = distritoFallback;
+            }
+            delete workingPayload[missingCol];
+            continue;
+          }
+        }
+        break;
       }
 
-      // Fallback 1: columnas base con UUID generado
-      const coreWithId = generatedUuid ? { ...corePayload, id: generatedUuid } : corePayload;
-      const { data: d2, error: err2 } = await client.from('cv_pacientes').insert([coreWithId]).select('id');
-      if (!err2) {
-        const savedId = d2?.[0]?.id ? String(d2[0].id) : generatedUuid || null;
-        if (savedId) return { id: savedId };
-      }
-
-      // Fallback 2: columnas mínimas con UUID generado
+      // Fallback final con columnas mínimas y sin id explícito (por si el schema requiere default)
       const minimalWithId = generatedUuid ? { ...bareMinimal, id: generatedUuid } : bareMinimal;
       const { data: d3, error: err3 } = await client.from('cv_pacientes').insert([minimalWithId]).select('id');
       if (!err3) {
@@ -286,17 +304,16 @@ export const supabaseService = {
         if (savedId) return { id: savedId };
       }
 
-      // Fallback 3: sin campo id (dejar que PostgreSQL asigne id por defecto)
       const { data: d4, error: err4 } = await client.from('cv_pacientes').insert([bareMinimal]).select('id');
       if (!err4 && d4 && d4[0]?.id) {
         return { id: String(d4[0].id) };
       }
 
-      const lastErr = err4 || err3 || err2 || error;
-      console.warn('Error insertando paciente en Supabase:', lastErr);
+      const finalErr = err4 || err3 || lastError;
+      console.warn('Error insertando paciente en Supabase:', finalErr);
       return {
         id: null,
-        error: formatSupabaseWriteError('cv_pacientes', lastErr, 'No se pudo guardar el paciente en Supabase.').message,
+        error: formatSupabaseWriteError('cv_pacientes', finalErr, 'No se pudo guardar el paciente en Supabase.').message,
       };
     } catch (err: any) {
       console.warn('Error insertando paciente en Supabase:', err);
@@ -332,35 +349,43 @@ export const supabaseService = {
       if (data.tutor_celular !== undefined) corePayload.tutor_celular = data.tutor_celular || null;
       if (data.tutor_parentesco !== undefined) corePayload.tutor_parentesco = data.tutor_parentesco || null;
 
-      const fullPayload: Record<string, any> = { ...corePayload };
-      if (data.seguro_otro_especificar !== undefined) fullPayload.seguro_otro_especificar = data.seguro_otro_especificar || null;
-      if (data.distrito_otro_especificar !== undefined) fullPayload.distrito_otro_especificar = data.distrito_otro_especificar || null;
-      if (data.tutor_tipo_documento !== undefined) fullPayload.tutor_tipo_documento = data.tutor_tipo_documento || null;
-      if (data.tutor_numero_documento !== undefined) fullPayload.tutor_numero_documento = data.tutor_numero_documento || null;
+      const workingPayload: Record<string, any> = { ...corePayload };
+      if (data.seguro_otro_especificar !== undefined) workingPayload.seguro_otro_especificar = data.seguro_otro_especificar || null;
+      if (data.distrito_otro_especificar !== undefined) workingPayload.distrito_otro_especificar = data.distrito_otro_especificar || null;
+      if (data.tutor_tipo_documento !== undefined) workingPayload.tutor_tipo_documento = data.tutor_tipo_documento || null;
+      if (data.tutor_numero_documento !== undefined) workingPayload.tutor_numero_documento = data.tutor_numero_documento || null;
 
-      const { error } = await client.from('cv_pacientes').update(fullPayload).eq('id', id);
-      if (!error) return { ok: true };
-
-      const rlsCheck = formatSupabaseWriteError('cv_pacientes', error, '');
-      if (rlsCheck.isRls) return { ok: false, error: rlsCheck.message };
-
-      // Fallback sin columnas extendidas si alguna columna opcional no existe en cv_pacientes
-      if (Object.keys(corePayload).length > 0) {
-        const fallbackUpdate = { ...corePayload };
-        if (data.distrito === 'OTRO' && data.distrito_otro_especificar?.trim()) {
-          fallbackUpdate.distrito = `OTRO: ${data.distrito_otro_especificar.trim().toUpperCase()}`;
+      let lastError: any = null;
+      for (let attempt = 0; attempt < 16; attempt++) {
+        if (Object.keys(workingPayload).length === 0) {
+          return { ok: true };
         }
-        const { error: err2 } = await client.from('cv_pacientes').update(fallbackUpdate).eq('id', id);
-        if (!err2) return { ok: true };
-        console.warn('Error actualizando paciente en Supabase:', err2);
-        return {
-          ok: false,
-          error: formatSupabaseWriteError('cv_pacientes', err2, 'No se pudo actualizar el paciente en Supabase.').message,
-        };
+        const { error } = await client.from('cv_pacientes').update(workingPayload).eq('id', id);
+        if (!error) return { ok: true };
+
+        lastError = error;
+        const rlsCheck = formatSupabaseWriteError('cv_pacientes', error, '');
+        if (rlsCheck.isRls) return { ok: false, error: rlsCheck.message };
+
+        const missingCol = extractMissingSchemaColumn(error);
+        if (missingCol && missingCol in workingPayload) {
+          if (
+            missingCol === 'distrito_otro_especificar' &&
+            data.distrito === 'OTRO' &&
+            data.distrito_otro_especificar?.trim()
+          ) {
+            workingPayload.distrito = `OTRO: ${data.distrito_otro_especificar.trim().toUpperCase()}`;
+          }
+          delete workingPayload[missingCol];
+          continue;
+        }
+        break;
       }
+
+      console.warn('Error actualizando paciente en Supabase:', lastError);
       return {
         ok: false,
-        error: formatSupabaseWriteError('cv_pacientes', error, 'No se pudo actualizar el paciente en Supabase.').message,
+        error: formatSupabaseWriteError('cv_pacientes', lastError, 'No se pudo actualizar el paciente en Supabase.').message,
       };
     } catch (err: any) {
       console.warn('Error actualizando paciente en Supabase:', err);
