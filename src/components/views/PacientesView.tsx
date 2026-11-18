@@ -11,15 +11,28 @@ import {
   Filter,
   FileText,
   Edit2,
+  Upload,
+  Check,
+  X,
 } from 'lucide-react';
 import { ModalFichaCompletaPaciente } from '../modals/ModalFichaCompletaPaciente';
 import { formatDistritoPaciente } from '../../lib/distritosHelper';
 
 export const PacientesView: React.FC = () => {
-  const { pacientes, setActiveModal, setEditingPaciente, deletePaciente, setSelectedPacienteFichaId, setCurrentTab } = useApp();
+  const {
+    pacientes,
+    currentUser,
+    setActiveModal,
+    setEditingPaciente,
+    deletePaciente,
+    setSelectedPacienteFichaId,
+    setCurrentTab,
+  } = useApp();
+  const isDeveloper = currentUser.rol === 'desarrollador';
   const [searchTerm, setSearchTerm] = useState('');
   const [seguroFilter, setSeguroFilter] = useState('');
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const filtrados = pacientes.filter((p) => {
     const term = searchTerm.toLowerCase();
@@ -91,7 +104,17 @@ export const PacientesView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 self-start md:self-auto">
+        <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
+          {isDeveloper && (
+            <button
+              onClick={() => setActiveModal('importarPacientes')}
+              className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer shadow-xs transition-all"
+            >
+              <Upload size={15} />
+              <span>Importar Excel / Pegar</span>
+            </button>
+          )}
+
           <button
             onClick={exportarExcel}
             className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer shadow-xs transition-all"
@@ -230,17 +253,35 @@ export const PacientesView: React.FC = () => {
                           >
                             <Edit2 size={15} />
                           </button>
-                          <button
-                            onClick={() => {
-                              if (confirm(`¿Eliminar al paciente ${p.apellidos_nombres}?`)) {
-                                deletePaciente(p.id);
-                              }
-                            }}
-                            title="Eliminar paciente"
-                            className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg cursor-pointer transition-colors"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                          {confirmDeleteId === p.id ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => {
+                                  deletePaciente(p.id);
+                                  setConfirmDeleteId(null);
+                                }}
+                                title="Confirmar eliminación"
+                                className="p-1.5 bg-rose-600 text-white hover:bg-rose-700 rounded-lg cursor-pointer transition-colors"
+                              >
+                                <Check size={13} />
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteId(null)}
+                                title="Cancelar"
+                                className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg cursor-pointer transition-colors"
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDeleteId(p.id)}
+                              title="Eliminar paciente"
+                              className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg cursor-pointer transition-colors"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

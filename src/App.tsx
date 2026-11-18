@@ -20,6 +20,7 @@ import { ModalRegistrarPaciente } from './components/modals/ModalRegistrarPacien
 import { ModalEditarPaciente } from './components/modals/ModalEditarPaciente';
 import { ModalVerPacientes } from './components/modals/ModalVerPacientes';
 import { ModalSupabaseStatus } from './components/modals/ModalSupabaseStatus';
+import { ModalImportarPacientes } from './components/modals/ModalImportarPacientes';
 import { Lock, ShieldAlert, ArrowLeft } from 'lucide-react';
 
 const MainContent: React.FC = () => {
@@ -113,6 +114,7 @@ const AppShell: React.FC = () => {
       {/* Modales Globales */}
       <ModalRegistrarPaciente />
       <ModalEditarPaciente />
+      <ModalImportarPacientes />
       <ModalVerPacientes />
       <ModalSupabaseStatus />
     </div>

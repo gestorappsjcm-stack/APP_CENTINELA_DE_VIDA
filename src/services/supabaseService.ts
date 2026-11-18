@@ -1,6 +1,12 @@
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import { Paciente, Cita, Triaje, AtencionClinica, Profesional, Usuario, FUA } from '../types';
 import { parseMedicamentosList } from '../lib/medicamentosHelper';
+import {
+  calcularEdadDesdeFecha,
+  deduplicarPacientes,
+  normalizarDocumento,
+  normalizarHcl,
+} from '../lib/pacientesHelper';
 
 export interface SupabaseDashboardStats {
   totalPacientes?: number;
@@ -162,7 +168,7 @@ export const supabaseService = {
         // Intentar tabla pac_datos_personales como alternativa
         const { data: altData, error: altErr } = await client.from('pac_datos_personales').select('*');
         if (!altErr && altData) {
-          return altData.map((p: any) => ({
+          const mappedAlt: Paciente[] = altData.map((p: any) => ({
             id: p.id ? String(p.id) : `pac-${Date.now()}`,
             tipo_documento: p.tipo_documento || 'DNI',
             numero_documento: p.numero_documento || p.dni || '',
@@ -171,7 +177,7 @@ export const supabaseService = {
             apellidos_nombres: p.apellidos_nombres || `${p.apellidos || ''} ${p.nombres || ''}`.trim(),
             fecha_nacimiento: p.fecha_nacimiento || '',
             sexo: p.sexo || 'M',
-            edad: p.edad || 0,
+            edad: p.edad ?? calcularEdadDesdeFecha(p.fecha_nacimiento) ?? 0,
             seguro: p.seguro || p.tipo_seguro || 'SIS',
             direccion: p.direccion || '',
             distrito: p.distrito || 'Chincha Alta',
@@ -179,21 +185,22 @@ export const supabaseService = {
             estado: p.estado || 'activo',
             fecha_ingreso: p.fecha_ingreso || new Date().toISOString().split('T')[0],
           }));
+          return deduplicarPacientes(mappedAlt);
         }
         return null;
       }
 
       if (data) {
-        return data.map((p: any) => ({
+        const mapped: Paciente[] = data.map((p: any) => ({
           id: String(p.id),
           tipo_documento: p.tipo_documento || 'DNI',
-          numero_documento: p.numero_documento || '',
+          numero_documento: p.numero_documento ? String(p.numero_documento).trim() : '',
           codigo_temporal: p.codigo_temporal || '',
-          hcl: p.hcl || '',
+          hcl: p.hcl ? String(p.hcl).trim() : '',
           apellidos_nombres: p.apellidos_nombres || '',
           fecha_nacimiento: p.fecha_nacimiento || '',
           sexo: p.sexo || 'M',
-          edad: p.edad ?? undefined,
+          edad: p.edad ?? calcularEdadDesdeFecha(p.fecha_nacimiento),
           estado_civil: p.estado_civil || 'SOLTERO',
           grado_instruccion: p.grado_instruccion || 'SECUNDARIA',
           seguro: p.seguro || 'SIS',
@@ -204,16 +211,85 @@ export const supabaseService = {
           celular: p.celular || '',
           estado: p.estado || 'activo',
           fecha_ingreso: p.fecha_ingreso || new Date().toISOString().split('T')[0],
-          tiene_tutor: Boolean(p.tiene_tutor),
+          tiene_tutor: Boolean(p.tiene_tutor || p.tutor_nombres || p.tutor_numero_documento),
           tutor_nombres: p.tutor_nombres || '',
           tutor_tipo_documento: p.tutor_tipo_documento || 'DNI',
           tutor_numero_documento: p.tutor_numero_documento || '',
           tutor_celular: p.tutor_celular || '',
           tutor_parentesco: p.tutor_parentesco || 'PADRE',
         }));
+        return deduplicarPacientes(mapped);
       }
     } catch (err) {
       console.warn('Error al obtener pacientes de Supabase:', err);
+    }
+    return null;
+  },
+
+  async findPacienteDuplicado(params: {
+    tipo_documento?: string;
+    numero_documento?: string | null;
+    hcl?: string | null;
+    excludeId?: string;
+  }): Promise<{
+    field: 'numero_documento' | 'hcl';
+    existing: { id: string; apellidos_nombres: string; numero_documento?: string; hcl?: string };
+  } | null> {
+    const client = getSupabase();
+    if (!client) return null;
+    try {
+      const docNorm = params.tipo_documento !== 'INDOCUMENTADO' ? normalizarDocumento(params.numero_documento) : '';
+      const hclNorm = normalizarHcl(params.hcl);
+
+      if (docNorm) {
+        const { data } = await client
+          .from('cv_pacientes')
+          .select('id, apellidos_nombres, numero_documento, hcl')
+          .ilike('numero_documento', docNorm.replace(/[%_]/g, ''))
+          .limit(5);
+        const match = (data || []).find(
+          (r: any) =>
+            String(r.id) !== params.excludeId &&
+            normalizarDocumento(r.numero_documento) === docNorm
+        );
+        if (match) {
+          return {
+            field: 'numero_documento',
+            existing: {
+              id: String(match.id),
+              apellidos_nombres: match.apellidos_nombres || '',
+              numero_documento: match.numero_documento || undefined,
+              hcl: match.hcl || undefined,
+            },
+          };
+        }
+      }
+
+      if (hclNorm) {
+        const { data } = await client
+          .from('cv_pacientes')
+          .select('id, apellidos_nombres, numero_documento, hcl')
+          .ilike('hcl', hclNorm.replace(/[%_]/g, ''))
+          .limit(5);
+        const match = (data || []).find(
+          (r: any) =>
+            String(r.id) !== params.excludeId &&
+            normalizarHcl(r.hcl) === hclNorm
+        );
+        if (match) {
+          return {
+            field: 'hcl',
+            existing: {
+              id: String(match.id),
+              apellidos_nombres: match.apellidos_nombres || '',
+              numero_documento: match.numero_documento || undefined,
+              hcl: match.hcl || undefined,
+            },
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Error verificando duplicado de paciente en Supabase:', err);
     }
     return null;
   },
@@ -247,13 +323,17 @@ export const supabaseService = {
         estado: paciente.estado || 'activo',
       };
 
+      const edadCalculada =
+        typeof paciente.edad === 'number'
+          ? paciente.edad
+          : calcularEdadDesdeFecha(paciente.fecha_nacimiento) ?? null;
+
       const corePayload: Record<string, any> = {
         ...bareMinimal,
-        edad: typeof paciente.edad === 'number' ? paciente.edad : null,
+        edad: edadCalculada,
         estado_civil: paciente.estado_civil || null,
         grado_instruccion: paciente.grado_instruccion || null,
         fecha_ingreso: paciente.fecha_ingreso,
-        tiene_tutor: Boolean(paciente.tiene_tutor),
         tutor_nombres: paciente.tutor_nombres || null,
         tutor_celular: paciente.tutor_celular || null,
         tutor_parentesco: paciente.tutor_parentesco || null,
@@ -344,7 +424,6 @@ export const supabaseService = {
       if (data.distrito !== undefined) corePayload.distrito = data.distrito || null;
       if (data.celular !== undefined) corePayload.celular = data.celular || null;
       if (data.estado !== undefined) corePayload.estado = data.estado;
-      if (data.tiene_tutor !== undefined) corePayload.tiene_tutor = Boolean(data.tiene_tutor);
       if (data.tutor_nombres !== undefined) corePayload.tutor_nombres = data.tutor_nombres || null;
       if (data.tutor_celular !== undefined) corePayload.tutor_celular = data.tutor_celular || null;
       if (data.tutor_parentesco !== undefined) corePayload.tutor_parentesco = data.tutor_parentesco || null;

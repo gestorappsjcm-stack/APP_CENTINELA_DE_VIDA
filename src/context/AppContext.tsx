@@ -27,6 +27,13 @@ import {
 } from '../data/mockData';
 import { supabaseService, SupabaseDashboardStats } from '../services/supabaseService';
 import { isSupabaseConfigured } from '../lib/supabase';
+import {
+  buscarConflictoPaciente,
+  calcularEdadDesdeFecha,
+  deduplicarPacientes,
+  normalizarDocumento,
+  normalizarHcl,
+} from '../lib/pacientesHelper';
 
 interface AppContextType {
   // Autenticación y permisos
@@ -59,6 +66,9 @@ interface AppContextType {
   setEditingPaciente: (p: Paciente | null) => void;
   addPaciente: (paciente: Omit<Paciente, 'id' | 'fecha_ingreso'>) => Promise<{ success: boolean; message?: string; error?: string }>;
   updatePaciente: (id: string, data: Partial<Paciente>) => Promise<{ success: boolean; error?: string }>;
+  importarPacientesMasivo: (
+    registros: Omit<Paciente, 'id' | 'fecha_ingreso'>[]
+  ) => Promise<{ inserted: number; skippedDuplicates: number; errors: string[] }>;
   deletePaciente: (id: string) => void;
 
   // FUA (SIS)
@@ -227,14 +237,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          // Filtrar antiguos registros demo (pac-1 a pac-10) para pruebas oficiales
-          return parsed.filter((p: any) => !p.id || !p.id.match(/^pac-[1-9]$|^pac-10$/));
+          // Filtrar antiguos registros demo (pac-1 a pac-10) y deduplicar por Documento/HCL
+          return deduplicarPacientes(parsed.filter((p: any) => !p.id || !p.id.match(/^pac-[1-9]$|^pac-10$/)));
         }
       } catch (e) {
         console.warn('Error parseando pacientes:', e);
       }
     }
-    return INITIAL_PACIENTES;
+    return deduplicarPacientes(INITIAL_PACIENTES);
   });
 
   const [fuas, setFuas] = useState<FUA[]>(() => {
@@ -470,7 +480,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSupabaseLiveStats(liveStats);
       }
       if (Array.isArray(supaPacientes)) {
-        setPacientes(supaPacientes);
+        setPacientes(deduplicarPacientes(supaPacientes));
       }
       if (Array.isArray(supaCitas)) {
         setCitas(supaCitas);
@@ -702,28 +712,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  // PACIENTES
+  // PACIENTES (Registro único estricto por Documento y HCL)
   const addPaciente = async (
     data: Omit<Paciente, 'id' | 'fecha_ingreso'>
   ): Promise<{ success: boolean; message?: string; error?: string }> => {
-    // Verificar duplicados
-    if (data.tipo_documento === 'INDOCUMENTADO' && data.hcl) {
-      const existe = pacientes.some((p) => p.hcl?.toLowerCase() === data.hcl?.toLowerCase());
-      if (existe) {
-        return { success: false, error: 'Ya existe un paciente indocumentado con este HCL.' };
-      }
-    } else if (data.numero_documento) {
-      const existe = pacientes.some(
-        (p) => p.tipo_documento === data.tipo_documento && p.numero_documento === data.numero_documento
-      );
-      if (existe) {
-        return { success: false, error: `Ya existe un paciente con ${data.tipo_documento}: ${data.numero_documento}` };
+    const docLimpio = data.tipo_documento !== 'INDOCUMENTADO' ? normalizarDocumento(data.numero_documento) : '';
+    const hclLimpio = normalizarHcl(data.hcl);
+    const codTemporalLimpio = data.tipo_documento === 'INDOCUMENTADO' ? normalizarDocumento(data.codigo_temporal) : '';
+
+    const conflictoLocal = buscarConflictoPaciente(
+      {
+        tipo_documento: data.tipo_documento,
+        numero_documento: docLimpio,
+        hcl: hclLimpio,
+        codigo_temporal: codTemporalLimpio,
+      },
+      pacientes
+    );
+    if (conflictoLocal) {
+      return { success: false, error: conflictoLocal.message };
+    }
+
+    if (isSupabaseConfigured()) {
+      const conflictoRemoto = await supabaseService.findPacienteDuplicado({
+        tipo_documento: data.tipo_documento,
+        numero_documento: docLimpio,
+        hcl: hclLimpio,
+      });
+      if (conflictoRemoto) {
+        const labelCampo = conflictoRemoto.field === 'hcl' ? `HCL ${hclLimpio}` : `Documento ${docLimpio}`;
+        return {
+          success: false,
+          error: `Registro único duplicado en base de datos (${labelCampo}): ${conflictoRemoto.existing.apellidos_nombres}.`,
+        };
       }
     }
 
-    const tempId = `pac-${Date.now()}`;
+    const tempId = `pac-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const edadFinal =
+      typeof data.edad === 'number' ? data.edad : calcularEdadDesdeFecha(data.fecha_nacimiento);
+
     const newPaciente: Paciente = {
       ...data,
+      numero_documento: docLimpio || undefined,
+      codigo_temporal: codTemporalLimpio || undefined,
+      hcl: hclLimpio || undefined,
+      edad: edadFinal,
       id: tempId,
       fecha_ingreso: new Date().toISOString().split('T')[0],
     };
@@ -739,7 +773,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       newPaciente.id = res.id;
     }
 
-    setPacientes((prev) => [newPaciente, ...prev]);
+    setPacientes((prev) => deduplicarPacientes([newPaciente, ...prev]));
     return { success: true, message: 'Paciente registrado correctamente.' };
   };
 
@@ -750,32 +784,146 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const nextTipoDoc = data.tipo_documento ?? actual.tipo_documento;
-    const nextNumDoc = (data.numero_documento !== undefined ? data.numero_documento : actual.numero_documento)?.trim();
-    const nextHcl = (data.hcl !== undefined ? data.hcl : actual.hcl)?.trim();
+    const nextNumDoc = normalizarDocumento(
+      data.numero_documento !== undefined ? data.numero_documento : actual.numero_documento
+    );
+    const nextHcl = normalizarHcl(data.hcl !== undefined ? data.hcl : actual.hcl);
+    const nextCod = normalizarDocumento(
+      data.codigo_temporal !== undefined ? data.codigo_temporal : actual.codigo_temporal
+    );
 
-    if (nextTipoDoc === 'INDOCUMENTADO' && nextHcl) {
-      const existe = pacientes.some((p) => p.id !== id && p.hcl?.toLowerCase() === nextHcl.toLowerCase());
-      if (existe) {
-        return { success: false, error: `Ya existe otro paciente con HCL: ${nextHcl}.` };
-      }
-    } else if (nextTipoDoc !== 'INDOCUMENTADO' && nextNumDoc) {
-      const existe = pacientes.some(
-        (p) => p.id !== id && p.tipo_documento === nextTipoDoc && p.numero_documento?.trim() === nextNumDoc
-      );
-      if (existe) {
-        return { success: false, error: `Ya existe otro paciente registrado con ${nextTipoDoc}: ${nextNumDoc}.` };
-      }
+    const conflictoLocal = buscarConflictoPaciente(
+      {
+        tipo_documento: nextTipoDoc,
+        numero_documento: nextNumDoc,
+        hcl: nextHcl,
+        codigo_temporal: nextCod,
+      },
+      pacientes,
+      id
+    );
+    if (conflictoLocal) {
+      return { success: false, error: conflictoLocal.message };
     }
 
     if (isSupabaseConfigured()) {
-      const res = await supabaseService.updatePaciente(id, data);
+      const conflictoRemoto = await supabaseService.findPacienteDuplicado({
+        tipo_documento: nextTipoDoc,
+        numero_documento: nextNumDoc,
+        hcl: nextHcl,
+        excludeId: id,
+      });
+      if (conflictoRemoto) {
+        const labelCampo = conflictoRemoto.field === 'hcl' ? `HCL ${nextHcl}` : `Documento ${nextNumDoc}`;
+        return {
+          success: false,
+          error: `No se puede actualizar porque ${labelCampo} ya pertenece a ${conflictoRemoto.existing.apellidos_nombres}.`,
+        };
+      }
+    }
+
+    const normalizedPayload: Partial<Paciente> = {
+      ...data,
+      ...(data.numero_documento !== undefined ? { numero_documento: nextNumDoc || undefined } : {}),
+      ...(data.hcl !== undefined ? { hcl: nextHcl || undefined } : {}),
+      ...(data.fecha_nacimiento !== undefined && data.edad === undefined
+        ? { edad: calcularEdadDesdeFecha(data.fecha_nacimiento) }
+        : {}),
+    };
+
+    if (isSupabaseConfigured()) {
+      const res = await supabaseService.updatePaciente(id, normalizedPayload);
       if (!res.ok) {
         return { success: false, error: res.error || 'No se pudo actualizar el paciente en Supabase.' };
       }
     }
 
-    setPacientes((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
+    setPacientes((prev) => prev.map((p) => (p.id === id ? { ...p, ...normalizedPayload } : p)));
     return { success: true };
+  };
+
+  const importarPacientesMasivo = async (
+    registros: Omit<Paciente, 'id' | 'fecha_ingreso'>[]
+  ): Promise<{ inserted: number; skippedDuplicates: number; errors: string[] }> => {
+    if (currentUser.rol !== 'desarrollador') {
+      return {
+        inserted: 0,
+        skippedDuplicates: 0,
+        errors: ['Acción restringida exclusivamente al perfil Desarrollador.'],
+      };
+    }
+
+    const remoteList = isSupabaseConfigured() ? await supabaseService.getPacientes() : null;
+    const workingExistentes: Paciente[] = remoteList
+      ? deduplicarPacientes([...remoteList, ...pacientes])
+      : deduplicarPacientes([...pacientes]);
+
+    const hoy = new Date().toISOString().split('T')[0];
+    const nuevosGuardados: Paciente[] = [];
+    const errors: string[] = [];
+    let skippedDuplicates = 0;
+
+    for (let i = 0; i < registros.length; i++) {
+      const item = registros[i];
+      const docLimpio = item.tipo_documento !== 'INDOCUMENTADO' ? normalizarDocumento(item.numero_documento) : '';
+      const hclLimpio = normalizarHcl(item.hcl);
+      const codTempLimpio = item.tipo_documento === 'INDOCUMENTADO' ? normalizarDocumento(item.codigo_temporal) : '';
+
+      const conflicto = buscarConflictoPaciente(
+        {
+          tipo_documento: item.tipo_documento,
+          numero_documento: docLimpio,
+          hcl: hclLimpio,
+          codigo_temporal: codTempLimpio,
+        },
+        workingExistentes
+      );
+
+      if (conflicto) {
+        skippedDuplicates++;
+        continue;
+      }
+
+      const edadAuto = calcularEdadDesdeFecha(item.fecha_nacimiento);
+      const nuevo: Paciente = {
+        ...item,
+        id: `pac-${Date.now()}-${i}-${Math.floor(Math.random() * 1000)}`,
+        numero_documento: docLimpio || undefined,
+        hcl: hclLimpio || undefined,
+        codigo_temporal: codTempLimpio || undefined,
+        edad: typeof edadAuto === 'number' ? edadAuto : item.edad,
+        fecha_ingreso: hoy,
+        estado: item.estado || 'activo',
+      };
+
+      if (isSupabaseConfigured()) {
+        const res = await supabaseService.insertPaciente(nuevo);
+        if (!res.id) {
+          errors.push(
+            `${nuevo.apellidos_nombres || docLimpio || hclLimpio}: ${res.error || 'Error al guardar en Supabase'}`
+          );
+          // Detener rápido si es un error de permisos RLS para no repetir 20 veces
+          if (res.error && res.error.toLowerCase().includes('rls')) {
+            break;
+          }
+          continue;
+        }
+        nuevo.id = res.id;
+      }
+
+      nuevosGuardados.push(nuevo);
+      workingExistentes.push(nuevo);
+    }
+
+    if (nuevosGuardados.length > 0) {
+      setPacientes((prev) => deduplicarPacientes([...nuevosGuardados.slice().reverse(), ...prev]));
+    }
+
+    return {
+      inserted: nuevosGuardados.length,
+      skippedDuplicates,
+      errors,
+    };
   };
 
   const deletePaciente = (id: string) => {
@@ -1378,6 +1526,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setEditingPaciente,
         addPaciente,
         updatePaciente,
+        importarPacientesMasivo,
         deletePaciente,
         fuas,
         fuaConfig,

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { supabaseService } from '../../services/supabaseService';
 import { DISTRITOS_CHINCHA } from '../../lib/distritosHelper';
+import { buscarConflictoPaciente, calcularEdadDesdeFecha } from '../../lib/pacientesHelper';
 
 export const ModalRegistrarPaciente: React.FC = () => {
   const { activeModal, setActiveModal, addPaciente, pacientes, setCurrentTab, setSelectedPacienteFichaId } = useApp();
@@ -120,18 +121,8 @@ export const ModalRegistrarPaciente: React.FC = () => {
   // Cálculo automático de edad
   const handleFechaNacimientoChange = (fecha: string) => {
     setFechaNacimiento(fecha);
-    if (!fecha) {
-      setEdad('');
-      return;
-    }
-    const hoy = new Date();
-    const nacimiento = new Date(fecha + 'T00:00:00');
-    let diff = hoy.getFullYear() - nacimiento.getFullYear();
-    const mes = hoy.getMonth() - nacimiento.getMonth();
-    if (mes < 0 || (mes === 0 && hoy.getDate() < nacimiento.getDate())) {
-      diff--;
-    }
-    setEdad(Math.max(0, diff));
+    const calculada = calcularEdadDesdeFecha(fecha);
+    setEdad(typeof calculada === 'number' ? calculada : '');
   };
 
   // Búsqueda real de identidad en la base de datos (tabla pac_datos_personales)
@@ -185,24 +176,29 @@ export const ModalRegistrarPaciente: React.FC = () => {
     }
   };
 
-  // Verificar si ya existe en el padrón
+  // Verificar si ya existe en el padrón (por Documento o por HCL en cualquier tipo de documento)
   const verificarDuplicado = () => {
     setDuplicateWarning(null);
     setPacienteExistente(null);
-    if (tipoDoc === 'INDOCUMENTADO') {
-      if (hcl && hcl.trim().length > 2) {
-        const existe = pacientes.find((p) => p.hcl?.toLowerCase() === hcl.trim().toLowerCase());
-        if (existe) {
-          setDuplicateWarning('REGISTRO DE PACIENTE YA EXISTE - CONTINUE CON LA CONSULTA O CITA');
-          setPacienteExistente(existe);
-        }
-      }
-    } else if (numDoc && numDoc.trim().length >= 8) {
-      const existe = pacientes.find((p) => p.tipo_documento === tipoDoc && p.numero_documento === numDoc.trim());
-      if (existe) {
-        setDuplicateWarning('REGISTRO DE PACIENTE YA EXISTE - CONTINUE CON LA CONSULTA O CITA');
-        setPacienteExistente(existe);
-      }
+
+    const docAConsultar = tipoDoc !== 'INDOCUMENTADO' && numDoc.trim().length >= 4 ? numDoc.trim() : '';
+    const hclAConsultar = hcl.trim().length > 0 ? hcl.trim() : '';
+    if (!docAConsultar && !hclAConsultar) return;
+
+    const conflicto = buscarConflictoPaciente(
+      {
+        tipo_documento: tipoDoc,
+        numero_documento: docAConsultar,
+        hcl: hclAConsultar,
+      },
+      pacientes
+    );
+
+    if (conflicto) {
+      setDuplicateWarning(
+        `REGISTRO DE PACIENTE YA EXISTE (${conflicto.field === 'hcl' ? 'HCL DUPLICADA' : 'DOCUMENTO DUPLICADO'}) - CONTINUE CON LA CONSULTA O CITA`
+      );
+      setPacienteExistente(conflicto.existing);
     }
   };
 

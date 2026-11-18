@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { supabaseService } from '../../services/supabaseService';
 import { DISTRITOS_CHINCHA, parseDistritoParaFormulario } from '../../lib/distritosHelper';
+import { buscarConflictoPaciente, calcularEdadDesdeFecha } from '../../lib/pacientesHelper';
 
 export const ModalEditarPaciente: React.FC = () => {
   const { editingPaciente, setEditingPaciente, updatePaciente, pacientes } = useApp();
@@ -107,32 +108,26 @@ export const ModalEditarPaciente: React.FC = () => {
     }
   }, [tipoDoc, editingPaciente, codigoTemporal]);
 
-  // Verificar duplicados contra OTROS pacientes
+  // Verificar duplicados contra OTROS pacientes (por Documento o por HCL en cualquier tipo de documento)
   useEffect(() => {
     if (!editingPaciente) return;
     setDuplicateWarning(null);
 
-    if (tipoDoc === 'INDOCUMENTADO') {
-      if (hcl.trim().length > 2) {
-        const existe = pacientes.find(
-          (p) => p.id !== editingPaciente.id && p.hcl?.toLowerCase() === hcl.trim().toLowerCase()
-        );
-        if (existe) {
-          setDuplicateWarning(`Ya existe otro paciente con HCL ${hcl.trim()}: ${existe.apellidos_nombres}`);
-        }
-      }
-    } else if (numDoc.trim().length >= 8) {
-      const existe = pacientes.find(
-        (p) =>
-          p.id !== editingPaciente.id &&
-          p.tipo_documento === tipoDoc &&
-          p.numero_documento?.trim() === numDoc.trim()
-      );
-      if (existe) {
-        setDuplicateWarning(
-          `Ya existe otro paciente con ${tipoDoc} ${numDoc.trim()}: ${existe.apellidos_nombres}`
-        );
-      }
+    const docAConsultar = tipoDoc !== 'INDOCUMENTADO' && numDoc.trim().length >= 4 ? numDoc.trim() : '';
+    const hclAConsultar = hcl.trim().length > 0 ? hcl.trim() : '';
+    if (!docAConsultar && !hclAConsultar) return;
+
+    const conflicto = buscarConflictoPaciente(
+      {
+        tipo_documento: tipoDoc,
+        numero_documento: docAConsultar,
+        hcl: hclAConsultar,
+      },
+      pacientes,
+      editingPaciente.id
+    );
+    if (conflicto) {
+      setDuplicateWarning(conflicto.message);
     }
   }, [tipoDoc, numDoc, hcl, pacientes, editingPaciente]);
 
@@ -140,18 +135,8 @@ export const ModalEditarPaciente: React.FC = () => {
 
   const handleFechaNacimientoChange = (fecha: string) => {
     setFechaNacimiento(fecha);
-    if (!fecha) {
-      setEdad('');
-      return;
-    }
-    const hoy = new Date();
-    const nacimiento = new Date(fecha + 'T00:00:00');
-    let diff = hoy.getFullYear() - nacimiento.getFullYear();
-    const mes = hoy.getMonth() - nacimiento.getMonth();
-    if (mes < 0 || (mes === 0 && hoy.getDate() < nacimiento.getDate())) {
-      diff--;
-    }
-    setEdad(Math.max(0, diff));
+    const calculada = calcularEdadDesdeFecha(fecha);
+    setEdad(typeof calculada === 'number' ? calculada : '');
   };
 
   const buscarDNIInterno = async () => {
