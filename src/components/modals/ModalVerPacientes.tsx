@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Paciente } from '../../types';
-import { X, Search, FileSpreadsheet, Eye, Trash2, Users, Filter, Edit2 } from 'lucide-react';
+import { X, Search, FileSpreadsheet, Eye, Trash2, Users, Filter, Edit2, Upload } from 'lucide-react';
 import { ModalFichaCompletaPaciente } from './ModalFichaCompletaPaciente';
 import { formatDistritoPaciente } from '../../lib/distritosHelper';
 
 export const ModalVerPacientes: React.FC = () => {
-  const { activeModal, setActiveModal, pacientes, setEditingPaciente, deletePaciente } = useApp();
+  const { activeModal, setActiveModal, pacientes, setEditingPaciente, deletePaciente, currentUser, isDeveloperMode } = useApp();
+  const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
   const [searchTerm, setSearchTerm] = useState('');
   const [seguroFilter, setSeguroFilter] = useState('');
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
@@ -109,13 +110,25 @@ export const ModalVerPacientes: React.FC = () => {
             </div>
           </div>
 
-          <button
-            onClick={exportarExcel}
-            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all self-start sm:self-auto"
-          >
-            <FileSpreadsheet size={14} />
-            <span>Exportar Excel / CSV</span>
-          </button>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {isDeveloper && (
+              <button
+                onClick={() => setActiveModal('importarPacientes')}
+                className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all shadow-xs"
+              >
+                <Upload size={14} />
+                <span>Importar Excel / Pegar</span>
+              </button>
+            )}
+
+            <button
+              onClick={exportarExcel}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all"
+            >
+              <FileSpreadsheet size={14} />
+              <span>Exportar Excel / CSV</span>
+            </button>
+          </div>
         </div>
 
         {/* Table */}

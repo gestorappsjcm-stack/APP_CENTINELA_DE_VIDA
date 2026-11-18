@@ -14,13 +14,24 @@ import {
   Calendar,
   FileText,
   ArrowRight,
+  Upload,
 } from 'lucide-react';
 import { supabaseService } from '../../services/supabaseService';
 import { DISTRITOS_CHINCHA } from '../../lib/distritosHelper';
 import { buscarConflictoPaciente, calcularEdadDesdeFecha } from '../../lib/pacientesHelper';
 
 export const ModalRegistrarPaciente: React.FC = () => {
-  const { activeModal, setActiveModal, addPaciente, pacientes, setCurrentTab, setSelectedPacienteFichaId } = useApp();
+  const {
+    activeModal,
+    setActiveModal,
+    addPaciente,
+    pacientes,
+    setCurrentTab,
+    setSelectedPacienteFichaId,
+    currentUser,
+    isDeveloperMode,
+  } = useApp();
+  const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
 
   const [tipoDoc, setTipoDoc] = useState<TipoDocumento>('DNI');
   const [numDoc, setNumDoc] = useState('');
@@ -289,12 +300,25 @@ export const ModalRegistrarPaciente: React.FC = () => {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setActiveModal(null)}
-            className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg cursor-pointer"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            {isDeveloper && (
+              <button
+                type="button"
+                onClick={() => setActiveModal('importarPacientes')}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-xs"
+              >
+                <Upload size={13} />
+                <span>Importar Excel / Pegar</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveModal(null)}
+              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Body */}

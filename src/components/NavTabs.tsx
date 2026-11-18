@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { ModuleId } from '../types';
 import {
   LayoutDashboard,
+  Users,
   CalendarDays,
   Stethoscope,
   Activity,
@@ -25,6 +26,7 @@ interface TabItem {
 
 const TABS: TabItem[] = [
   { id: 'dashboard', moduleId: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'pacientes', moduleId: 'pacientes', label: 'Pacientes', icon: Users },
   { id: 'agenda', moduleId: 'agenda', label: 'Agenda de Citas', icon: CalendarDays },
   { id: 'triaje', moduleId: 'triaje', label: 'Triaje', icon: Stethoscope },
   { id: 'atencion', moduleId: 'atencion', label: 'Consultorios / Atención', icon: Activity },
