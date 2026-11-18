@@ -21,6 +21,7 @@ import { ModalEditarPaciente } from './components/modals/ModalEditarPaciente';
 import { ModalVerPacientes } from './components/modals/ModalVerPacientes';
 import { ModalSupabaseStatus } from './components/modals/ModalSupabaseStatus';
 import { ModalImportarPacientes } from './components/modals/ModalImportarPacientes';
+import { ModalAuditoriaHcl } from './components/modals/ModalAuditoriaHcl';
 import { Lock, ShieldAlert, ArrowLeft } from 'lucide-react';
 
 const MainContent: React.FC = () => {
@@ -115,6 +116,7 @@ const AppShell: React.FC = () => {
       <ModalRegistrarPaciente />
       <ModalEditarPaciente />
       <ModalImportarPacientes />
+      <ModalAuditoriaHcl />
       <ModalVerPacientes />
       <ModalSupabaseStatus />
     </div>

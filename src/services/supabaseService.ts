@@ -226,6 +226,29 @@ export const supabaseService = {
     return null;
   },
 
+  async getPacientesHclAuditRaw(): Promise<
+    Array<{ id: string; hcl?: string; numero_documento?: string; apellidos_nombres: string }> | null
+  > {
+    const client = getSupabase();
+    if (!client) return null;
+    try {
+      const { data, error } = await client
+        .from('cv_pacientes')
+        .select('id, hcl, numero_documento, apellidos_nombres');
+      if (!error && data) {
+        return data.map((p: any) => ({
+          id: String(p.id),
+          hcl: p.hcl ? String(p.hcl).trim() : '',
+          numero_documento: p.numero_documento ? String(p.numero_documento).trim() : '',
+          apellidos_nombres: p.apellidos_nombres || '',
+        }));
+      }
+    } catch (err) {
+      console.warn('Error consultando HCL para auditoría en Supabase:', err);
+    }
+    return null;
+  },
+
   async findPacienteDuplicado(params: {
     tipo_documento?: string;
     numero_documento?: string | null;

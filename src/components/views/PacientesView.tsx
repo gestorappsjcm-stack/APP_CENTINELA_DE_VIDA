@@ -14,6 +14,7 @@ import {
   Upload,
   Check,
   X,
+  ClipboardCheck,
 } from 'lucide-react';
 import { ModalFichaCompletaPaciente } from '../modals/ModalFichaCompletaPaciente';
 import { formatDistritoPaciente } from '../../lib/distritosHelper';
@@ -106,6 +107,14 @@ export const PacientesView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
+          <button
+            onClick={() => setActiveModal('auditoriaHcl')}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer shadow-xs transition-all"
+          >
+            <ClipboardCheck size={15} />
+            <span>Verificar HCL</span>
+          </button>
+
           {isDeveloper && (
             <button
               onClick={() => setActiveModal('importarPacientes')}

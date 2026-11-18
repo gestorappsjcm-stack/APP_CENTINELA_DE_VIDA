@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Paciente } from '../../types';
-import { X, Search, FileSpreadsheet, Eye, Trash2, Users, Filter, Edit2, Upload } from 'lucide-react';
+import { X, Search, FileSpreadsheet, Eye, Trash2, Users, Filter, Edit2, Upload, ClipboardCheck } from 'lucide-react';
 import { ModalFichaCompletaPaciente } from './ModalFichaCompletaPaciente';
 import { formatDistritoPaciente } from '../../lib/distritosHelper';
 
@@ -111,6 +111,14 @@ export const ModalVerPacientes: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              onClick={() => setActiveModal('auditoriaHcl')}
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all shadow-xs"
+            >
+              <ClipboardCheck size={14} />
+              <span>Verificar HCL</span>
+            </button>
+
             {isDeveloper && (
               <button
                 onClick={() => setActiveModal('importarPacientes')}

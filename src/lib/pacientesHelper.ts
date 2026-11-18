@@ -111,3 +111,109 @@ export const deduplicarPacientes = (lista: Paciente[]): Paciente[] => {
 
   return result;
 };
+
+export interface RegistroHclAudit {
+  id: string;
+  hcl?: string;
+  numero_documento?: string;
+  apellidos_nombres: string;
+}
+
+export interface AuditoriaHclResult {
+  totalRegistros: number;
+  unicosEnRango: number;
+  esperadosEnRango: number;
+  faltantes: number[];
+  duplicados: Array<{ hcl: string; registros: RegistroHclAudit[] }>;
+  fueraDeRango: Array<RegistroHclAudit & { hclNum: number }>;
+  sinHcl: RegistroHclAudit[];
+  noNumericos: RegistroHclAudit[];
+  maxHclDetectado: number | null;
+}
+
+/**
+ * Extrae el valor numérico de un HCL (soporta "100", "0100", "HCL-100").
+ */
+export const extraerNumeroHcl = (hcl?: string | null): number | null => {
+  const clean = (hcl || '').trim().toUpperCase();
+  if (!clean) return null;
+  if (/^\d+$/.test(clean)) return parseInt(clean, 10);
+  const prefixed = clean.match(/^HCL[-\s]?(\d+)$/);
+  if (prefixed?.[1]) return parseInt(prefixed[1], 10);
+  return null;
+};
+
+/**
+ * Audita correlativos de HCL en un rango [desde, hasta] detectando saltos, duplicados y registros fuera de rango.
+ */
+export const auditarCorrelativoHcl = (
+  registros: RegistroHclAudit[],
+  desde: number,
+  hasta: number
+): AuditoriaHclResult => {
+  const mapaPorHclNorm = new Map<string, RegistroHclAudit[]>();
+  const numerosPresentes = new Set<number>();
+  const sinHcl: RegistroHclAudit[] = [];
+  const noNumericos: RegistroHclAudit[] = [];
+  const fueraDeRango: Array<RegistroHclAudit & { hclNum: number }> = [];
+  let maxHclDetectado: number | null = null;
+
+  for (const r of registros) {
+    const hclNorm = normalizarHcl(r.hcl);
+    if (!hclNorm) {
+      sinHcl.push(r);
+      continue;
+    }
+
+    const lista = mapaPorHclNorm.get(hclNorm) || [];
+    lista.push(r);
+    mapaPorHclNorm.set(hclNorm, lista);
+
+    const num = extraerNumeroHcl(hclNorm);
+    if (num === null) {
+      noNumericos.push(r);
+      continue;
+    }
+
+    if (maxHclDetectado === null || num > maxHclDetectado) {
+      maxHclDetectado = num;
+    }
+
+    if (num >= desde && num <= hasta) {
+      numerosPresentes.add(num);
+    } else {
+      fueraDeRango.push({ ...r, hclNum: num });
+    }
+  }
+
+  const faltantes: number[] = [];
+  if (hasta >= desde && hasta - desde <= 50000) {
+    for (let n = desde; n <= hasta; n++) {
+      if (!numerosPresentes.has(n)) {
+        faltantes.push(n);
+      }
+    }
+  }
+
+  const duplicados: Array<{ hcl: string; registros: RegistroHclAudit[] }> = [];
+  for (const [hcl, lista] of mapaPorHclNorm.entries()) {
+    if (lista.length > 1) {
+      duplicados.push({ hcl, registros: lista });
+    }
+  }
+  duplicados.sort((a, b) => (extraerNumeroHcl(a.hcl) ?? 0) - (extraerNumeroHcl(b.hcl) ?? 0));
+  fueraDeRango.sort((a, b) => a.hclNum - b.hclNum);
+
+  return {
+    totalRegistros: registros.length,
+    unicosEnRango: numerosPresentes.size,
+    esperadosEnRango: hasta >= desde ? hasta - desde + 1 : 0,
+    faltantes,
+    duplicados,
+    fueraDeRango,
+    sinHcl,
+    noNumericos,
+    maxHclDetectado,
+  };
+};
+
