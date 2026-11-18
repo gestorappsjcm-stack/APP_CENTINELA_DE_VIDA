@@ -16,7 +16,8 @@ import { DISTRITOS_CHINCHA, parseDistritoParaFormulario } from '../../lib/distri
 import { buscarConflictoPaciente, calcularEdadDesdeFecha } from '../../lib/pacientesHelper';
 
 export const ModalEditarPaciente: React.FC = () => {
-  const { editingPaciente, setEditingPaciente, updatePaciente, pacientes } = useApp();
+  const { editingPaciente, setEditingPaciente, updatePaciente, pacientes, currentUser, isDeveloperMode } = useApp();
+  const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
 
   const [tipoDoc, setTipoDoc] = useState<TipoDocumento>('DNI');
   const [numDoc, setNumDoc] = useState('');
@@ -131,7 +132,7 @@ export const ModalEditarPaciente: React.FC = () => {
     }
   }, [tipoDoc, numDoc, hcl, pacientes, editingPaciente]);
 
-  if (!editingPaciente) return null;
+  if (!editingPaciente || !isDeveloper) return null;
 
   const handleFechaNacimientoChange = (fecha: string) => {
     setFechaNacimiento(fecha);

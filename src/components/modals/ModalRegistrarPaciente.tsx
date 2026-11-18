@@ -301,7 +301,7 @@ export const ModalRegistrarPaciente: React.FC = () => {
     }, 1000);
   };
 
-  if (activeModal !== 'registrarPaciente') return null;
+  if (activeModal !== 'registrarPaciente' || !isDeveloper) return null;
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">

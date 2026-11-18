@@ -1,7 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Usuario, ModuleId, RolUsuario } from '../types';
+import { Usuario, ModuleId, RolUsuario, Profesional } from '../types';
 import { MODULOS_SISTEMA } from '../data/mockData';
+import {
+  findUsuarioParaProfesional,
+  mapProfesionToRolYPermisos,
+  splitApellidosNombres,
+  sugerirUsuarioLogin,
+} from '../lib/profesionalesHelper';
 import {
   ShieldCheck,
   UserPlus,
@@ -16,14 +22,20 @@ import {
   LogIn,
   AlertCircle,
   HelpCircle,
+  Sparkles,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 export const GestionUsuariosView: React.FC = () => {
   const {
     usuarios,
+    profesionales,
     currentUser,
     setCurrentUser,
     isDeveloperMode,
+    pendingUsuarioProfesionalId,
+    setPendingUsuarioProfesionalId,
     addUsuario,
     updateUsuario,
     deleteUsuario,
@@ -63,12 +75,62 @@ export const GestionUsuariosView: React.FC = () => {
   const [userToDelete, setUserToDelete] = useState<Usuario | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedProfId, setSelectedProfId] = useState<string>('');
+  const [showPassword, setShowPassword] = useState(false);
 
-  const isDeveloperActive = currentUser.rol === 'desarrollador';
+  const isDeveloperActive = isDeveloperMode || currentUser.rol === 'desarrollador';
+  const canEditModuleAccess = isDeveloperActive || currentUser.rol === 'administrador';
+
+  const aplicarDatosDesdeProfesional = (prof: Profesional) => {
+    const { nombres, apellidos } = splitApellidosNombres(prof.apellidos_nombres);
+    const { rol, permisosModulos } = mapProfesionToRolYPermisos(prof.profesion);
+    const username = sugerirUsuarioLogin(nombres, apellidos, usuarios, prof.dni);
+
+    setSelectedProfId(prof.id);
+    setFormError(null);
+    setShowPassword(Boolean(prof.dni));
+    setFormData((prev) => ({
+      ...prev,
+      nombres,
+      apellidos,
+      usuario: username,
+      contrasena: prof.dni ? prof.dni.trim() : '',
+      rol,
+      correo: prof.correo || '',
+      telefono: prof.telefono || '',
+      estado: 'activo',
+      permisosModulos,
+    }));
+  };
+
+  useEffect(() => {
+    if (!pendingUsuarioProfesionalId) return;
+    const prof = profesionales.find((p) => p.id === pendingUsuarioProfesionalId);
+    if (prof) {
+      setEditingUserId(null);
+      setShowPassword(true);
+      setFormData({
+        nombres: '',
+        apellidos: '',
+        usuario: '',
+        contrasena: '',
+        rol: 'general',
+        correo: '',
+        telefono: '',
+        estado: 'activo',
+        permisosModulos: ['dashboard'],
+      });
+      aplicarDatosDesdeProfesional(prof);
+      setIsModalOpen(true);
+    }
+    setPendingUsuarioProfesionalId(null);
+  }, [pendingUsuarioProfesionalId, profesionales]);
 
   // Abrir modal para crear
   const handleOpenCreate = () => {
     setEditingUserId(null);
+    setSelectedProfId('');
+    setShowPassword(false);
     setFormData({
       nombres: '',
       apellidos: '',
@@ -87,6 +149,8 @@ export const GestionUsuariosView: React.FC = () => {
   // Abrir modal para editar
   const handleOpenEdit = (user: Usuario) => {
     setEditingUserId(user.id);
+    setSelectedProfId('');
+    setShowPassword(false);
     setFormData({
       nombres: user.nombres,
       apellidos: user.apellidos,
@@ -104,6 +168,10 @@ export const GestionUsuariosView: React.FC = () => {
 
   // Toggle de un permiso específico
   const togglePermiso = (modId: ModuleId) => {
+    if (!canEditModuleAccess) return;
+    if (modId === 'pacientes' || modId === 'ficha_paciente') return;
+    if (modId === 'gestion_usuarios' && formData.rol !== 'administrador') return;
+
     setFormData((prev) => {
       const exists = prev.permisosModulos.includes(modId);
       const updated = exists
@@ -118,13 +186,17 @@ export const GestionUsuariosView: React.FC = () => {
     if (preset === 'todos') {
       setFormData((prev) => ({
         ...prev,
-        permisosModulos: MODULOS_SISTEMA.map((m) => m.id),
+        permisosModulos: MODULOS_SISTEMA.filter((m) => {
+          if (m.id === 'pacientes' || m.id === 'ficha_paciente') return false;
+          if (m.id === 'gestion_usuarios' && prev.rol !== 'administrador') return false;
+          return true;
+        }).map((m) => m.id),
       }));
     } else if (preset === 'medico') {
       setFormData((prev) => ({
         ...prev,
         rol: 'medico',
-        permisosModulos: ['dashboard', 'pacientes', 'agenda', 'atencion', 'programacion_anual', 'reportes'],
+        permisosModulos: ['dashboard', 'fua', 'agenda', 'atencion', 'programacion_anual', 'reportes'],
       }));
     } else if (preset === 'triaje') {
       setFormData((prev) => ({
@@ -136,7 +208,7 @@ export const GestionUsuariosView: React.FC = () => {
       setFormData((prev) => ({
         ...prev,
         rol: 'admision',
-        permisosModulos: ['dashboard', 'pacientes', 'agenda', 'programacion_turnos', 'display_turnos'],
+        permisosModulos: ['dashboard', 'agenda', 'programacion_turnos', 'display_turnos', 'fua'],
       }));
     } else {
       setFormData((prev) => ({
@@ -265,7 +337,7 @@ export const GestionUsuariosView: React.FC = () => {
         <div className="space-y-1">
           <span className="font-bold">Control de Seguridad y Acceso por Módulos:</span>
           <p>
-            Los usuarios con rol <strong>Administrador</strong> tienen acceso irrestricto a todas las funciones. Los usuarios con rol <strong>General</strong> (médicos, psicólogos, enfermeros o admisión) únicamente visualizan y operan los módulos que hayan sido expresamente marcados en su matriz de autorización.
+            Solo el <strong>Desarrollador</strong> y el <strong>Administrador</strong> pueden editar accesos a módulos (el Administrador únicamente puede inactivar usuarios y no tiene acceso al módulo <strong>Pacientes</strong>). La eliminación permanente y el padrón de <strong>Pacientes</strong> son exclusivos del <strong>Desarrollador</strong>.
           </p>
         </div>
       </div>
@@ -390,7 +462,7 @@ export const GestionUsuariosView: React.FC = () => {
                   <div className="flex flex-wrap gap-1">
                     {isAdmin ? (
                       <span className="bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800">
-                        ⚡ Acceso Total a todos los módulos del sistema
+                        ⚡ Acceso administrativo (todos los módulos excepto Pacientes)
                       </span>
                     ) : u.permisosModulos.length === 0 ? (
                       <span className="text-[11px] text-rose-500 italic">
@@ -455,13 +527,13 @@ export const GestionUsuariosView: React.FC = () => {
                     <Edit2 size={15} />
                   </button>
 
-                  {(isDeveloperActive || (u.rol !== 'administrador' && u.id !== 'usr-1' && u.id !== currentUser.id)) && (
+                  {isDeveloperActive && (
                     <button
                       onClick={() => {
                         setDeleteError(null);
                         setUserToDelete(u);
                       }}
-                      title="Eliminar usuario"
+                      title="Eliminar usuario (Exclusivo Desarrollador)"
                       className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg cursor-pointer transition-colors"
                     >
                       <Trash2 size={15} />
@@ -575,6 +647,55 @@ export const GestionUsuariosView: React.FC = () => {
                 </div>
               )}
 
+              {/* Autocompletar rápido desde Profesionales Registrados */}
+              {!editingUserId && profesionales.length > 0 && (
+                <div className="p-3.5 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-indigo-600 dark:text-indigo-400" />
+                      <span>Jalar datos desde Profesional Registrado (Rápido)</span>
+                    </label>
+                    <span className="text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
+                      {profesionales.filter((p) => !findUsuarioParaProfesional(p, usuarios)).length} pendientes
+                    </span>
+                  </div>
+                  <select
+                    value={selectedProfId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setSelectedProfId(id);
+                      const prof = profesionales.find((p) => p.id === id);
+                      if (prof) aplicarDatosDesdeProfesional(prof);
+                    }}
+                    className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-lg font-medium text-slate-800 dark:text-slate-200 cursor-pointer"
+                  >
+                    <option value="">-- Seleccionar profesional para llenar automáticamente --</option>
+                    {[...profesionales]
+                      .sort((a, b) => {
+                        const aHas = findUsuarioParaProfesional(a, usuarios) ? 1 : 0;
+                        const bHas = findUsuarioParaProfesional(b, usuarios) ? 1 : 0;
+                        if (aHas !== bHas) return aHas - bHas;
+                        return a.apellidos_nombres.localeCompare(b.apellidos_nombres);
+                      })
+                      .map((p) => {
+                        const yaTiene = findUsuarioParaProfesional(p, usuarios);
+                        return (
+                          <option key={p.id} value={p.id}>
+                            {p.apellidos_nombres} — {p.profesion}
+                            {p.dni ? ` (${p.dni})` : ''}
+                            {yaTiene ? ` [Ya tiene @${yaTiene.usuario}]` : ' [Sin usuario]'}
+                          </option>
+                        );
+                      })}
+                  </select>
+                  {selectedProfId && (
+                    <p className="text-[10px] text-indigo-800 dark:text-indigo-300">
+                      Datos cargados automáticamente (nombres, usuario sugerido, rol asistencial y permisos). Solo revisa y guarda.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Datos Personales y Cuenta */}
               <div className="space-y-3">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400 border-b border-slate-100 dark:border-slate-700 pb-1">
@@ -627,16 +748,45 @@ export const GestionUsuariosView: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Contraseña {editingUserId ? '(Dejar vacío para no cambiar)' : '*'}
-                    </label>
-                    <input
-                      type="password"
-                      placeholder={editingUserId ? '••••••••' : 'Ingrese clave segura'}
-                      value={formData.contrasena}
-                      onChange={(e) => setFormData({ ...formData, contrasena: e.target.value })}
-                      className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500"
-                    />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Contraseña {editingUserId ? '(Dejar vacío para no cambiar)' : '*'}
+                      </label>
+                      {!editingUserId && selectedProfId && (
+                        (() => {
+                          const profDoc = profesionales.find((p) => p.id === selectedProfId)?.dni;
+                          return profDoc ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFormData((prev) => ({ ...prev, contrasena: profDoc }));
+                                setShowPassword(true);
+                              }}
+                              className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                            >
+                              Usar DNI/CE ({profDoc})
+                            </button>
+                          ) : null;
+                        })()
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder={editingUserId ? '••••••••' : 'Ingrese clave segura'}
+                        value={formData.contrasena}
+                        onChange={(e) => setFormData({ ...formData, contrasena: e.target.value })}
+                        className="w-full px-3 py-2 pr-9 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                      >
+                        {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -647,10 +797,21 @@ export const GestionUsuariosView: React.FC = () => {
                     </label>
                     <select
                       value={formData.rol}
-                      onChange={(e) => setFormData({ ...formData, rol: e.target.value as RolUsuario })}
+                      onChange={(e) => {
+                        const nuevoRol = e.target.value as RolUsuario;
+                        setFormData((prev) => ({
+                          ...prev,
+                          rol: nuevoRol,
+                          permisosModulos: prev.permisosModulos.filter((m) => {
+                            if (m === 'pacientes' || m === 'ficha_paciente') return false;
+                            if (m === 'gestion_usuarios' && nuevoRol !== 'administrador') return false;
+                            return true;
+                          }),
+                        }));
+                      }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500 cursor-pointer"
                     >
-                      <option value="administrador">Administrador (Acceso total)</option>
+                      <option value="administrador">Administrador (Gestión y Módulos Clínicos)</option>
                       <option value="medico">Médico / Psiquiatra</option>
                       <option value="psicologo">Psicólogo(a)</option>
                       <option value="enfermero">Enfermero(a) Triaje</option>
@@ -661,11 +822,11 @@ export const GestionUsuariosView: React.FC = () => {
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Correo Electrónico
+                      Correo Electrónico <span className="text-slate-400 font-normal">(opcional)</span>
                     </label>
                     <input
                       type="email"
-                      placeholder="usuario@centinela.gob.pe"
+                      placeholder="Opcional (ej: usuario@centinela.gob.pe)"
                       value={formData.correo}
                       onChange={(e) => setFormData({ ...formData, correo: e.target.value })}
                       className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500"
@@ -734,31 +895,49 @@ export const GestionUsuariosView: React.FC = () => {
                   <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl text-xs text-blue-900 dark:text-blue-200 flex items-center gap-2">
                     <Check size={16} className="text-blue-600 shrink-0" />
                     <span>
-                      Como <strong>Administrador</strong>, este usuario tiene acceso automático a todos los módulos actuales y futuros.
+                      Como <strong>Administrador</strong>, este usuario accede a los módulos operativos y puede <strong>editar accesos de módulos</strong> e <strong>inactivar</strong> cuentas, sin acceso a <strong>Pacientes</strong> ni eliminación permanente.
                     </span>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1">
                     {MODULOS_SISTEMA.map((mod) => {
-                      const isChecked = formData.permisosModulos.includes(mod.id);
+                      const isDevOnlyMod = mod.id === 'pacientes' || mod.id === 'ficha_paciente';
+                      const isAdminOnlyMod = mod.id === 'gestion_usuarios';
+                      const isDisabled = !canEditModuleAccess || isDevOnlyMod || isAdminOnlyMod;
+                      const isChecked = !isDisabled && formData.permisosModulos.includes(mod.id);
 
                       return (
                         <label
                           key={mod.id}
-                          className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
-                            isChecked
-                              ? 'bg-teal-50/70 dark:bg-teal-950/20 border-teal-300 dark:border-teal-800 text-teal-950 dark:text-teal-200'
-                              : 'bg-slate-50/50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                          className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all select-none ${
+                            isDisabled
+                              ? 'bg-slate-100/70 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-400 opacity-65 cursor-not-allowed'
+                              : isChecked
+                                ? 'bg-teal-50/70 dark:bg-teal-950/20 border-teal-300 dark:border-teal-800 text-teal-950 dark:text-teal-200 cursor-pointer'
+                                : 'bg-slate-50/50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 cursor-pointer'
                           }`}
                         >
                           <input
                             type="checkbox"
+                            disabled={isDisabled}
                             checked={isChecked}
                             onChange={() => togglePermiso(mod.id)}
-                            className="mt-0.5 w-4 h-4 rounded text-teal-600 focus:ring-teal-500 cursor-pointer"
+                            className="mt-0.5 w-4 h-4 rounded text-teal-600 focus:ring-teal-500 cursor-pointer disabled:cursor-not-allowed"
                           />
-                          <div className="text-xs">
-                            <span className="font-semibold block">{mod.label}</span>
+                          <div className="text-xs flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-semibold block">{mod.label}</span>
+                              {isDevOnlyMod && (
+                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                  Solo Desarrollador
+                                </span>
+                              )}
+                              {isAdminOnlyMod && (
+                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                  Solo Admin / Dev
+                                </span>
+                              )}
+                            </div>
                             <span className="text-[10px] text-slate-400 block leading-tight">
                               {mod.description}
                             </span>

@@ -12,7 +12,7 @@ export const ModalVerPacientes: React.FC = () => {
   const [seguroFilter, setSeguroFilter] = useState('');
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
 
-  if (activeModal !== 'verPacientes') return null;
+  if (activeModal !== 'verPacientes' || !isDeveloper) return null;
 
   const filtrados = pacientes.filter((p) => {
     const term = searchTerm.toLowerCase();

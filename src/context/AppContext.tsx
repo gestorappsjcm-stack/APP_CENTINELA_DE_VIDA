@@ -57,6 +57,8 @@ interface AppContextType {
   setCurrentTab: (tab: string) => void;
   activeModal: string | null;
   setActiveModal: (modal: string | null) => void;
+  pendingUsuarioProfesionalId: string | null;
+  setPendingUsuarioProfesionalId: (id: string | null) => void;
   selectedPacienteFichaId: string | null;
   setSelectedPacienteFichaId: (id: string | null) => void;
 
@@ -297,6 +299,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [pendingUsuarioProfesionalId, setPendingUsuarioProfesionalId] = useState<string | null>(null);
   // Por defecto, iniciar SIEMPRE en la pantalla de Login a menos que exista una sesión activa
   const [isLoggedOut, setIsLoggedOut] = useState<boolean>(() => {
     const active = sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_active_session`);
@@ -397,11 +400,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          // Limpiar antiguos registros demo (prof-1 a prof-50 o @centinela.gob.pe) para iniciar en blanco con datos reales
+          // Limpiar antiguos registros demo (prof-1 a prof-50) para iniciar en blanco con datos reales
           return parsed.filter(
-            (p: any) =>
-              (!p.id || !/^prof-\d{1,2}$/.test(String(p.id))) &&
-              !(p.correo && String(p.correo).toLowerCase().endsWith('@centinela.gob.pe'))
+            (p: any) => !p.id || !/^prof-\d{1,2}$/.test(String(p.id))
           );
         }
       } catch (e) {
@@ -810,11 +811,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Verificar si el usuario actual tiene acceso al módulo
   const canAccess = (moduleId: ModuleId): boolean => {
-    if (!currentUser) return true;
-    if (currentUser.rol === 'administrador' || currentUser.rol === 'desarrollador') return true;
-    // La ficha clínica y el display de turnos son de acceso universal en el CSMC
-    if (moduleId === 'ficha_paciente' || moduleId === 'display_turnos') return true;
-    if (!currentUser.permisosModulos || !Array.isArray(currentUser.permisosModulos)) return true;
+    if (!currentUser) return false;
+    const isDev = isDeveloperMode || currentUser.rol === 'desarrollador';
+    if (isDev) return true;
+
+    // 1. Solo el Desarrollador tiene acceso a la pestaña Pacientes y lo relacionado con ella
+    if (moduleId === 'pacientes' || moduleId === 'ficha_paciente') {
+      return false;
+    }
+
+    // 2. Solo el Administrador y el Desarrollador pueden editar accesos/usuarios
+    if (moduleId === 'gestion_usuarios') {
+      return currentUser.rol === 'administrador';
+    }
+
+    if (currentUser.rol === 'administrador') return true;
+
+    // La pantalla TV de turnos es de acceso operativo en el CSMC
+    if (moduleId === 'display_turnos') return true;
+    if (!currentUser.permisosModulos || !Array.isArray(currentUser.permisosModulos)) return false;
     return currentUser.permisosModulos.includes(moduleId);
   };
 
@@ -822,10 +837,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  // PACIENTES (Registro único estricto por Documento y HCL)
+  // PACIENTES (Registro único estricto por Documento y HCL — Exclusivo Desarrollador)
   const addPaciente = async (
     data: Omit<Paciente, 'id' | 'fecha_ingreso'>
   ): Promise<{ success: boolean; message?: string; error?: string }> => {
+    if (!isDeveloperMode && currentUser.rol !== 'desarrollador') {
+      return {
+        success: false,
+        error: 'Solo el Desarrollador tiene acceso al módulo de Pacientes.',
+      };
+    }
     const docLimpio = data.tipo_documento !== 'INDOCUMENTADO' ? normalizarDocumento(data.numero_documento) : '';
     const hclLimpio = normalizarHcl(data.hcl);
     const codTemporalLimpio = data.tipo_documento === 'INDOCUMENTADO' ? normalizarDocumento(data.codigo_temporal) : '';
@@ -888,6 +909,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updatePaciente = async (id: string, data: Partial<Paciente>): Promise<{ success: boolean; error?: string }> => {
+    const isDev = isDeveloperMode || currentUser.rol === 'desarrollador';
+    const isSoloSeguroClinico = Object.keys(data).length === 1 && data.seguro !== undefined;
+    if (!isDev && !isSoloSeguroClinico) {
+      return {
+        success: false,
+        error: 'Solo el Desarrollador puede modificar el padrón de pacientes.',
+      };
+    }
     const actual = pacientes.find((p) => p.id === id);
     if (!actual) {
       return { success: false, error: 'Paciente no encontrado.' };
@@ -1037,6 +1066,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deletePaciente = (id: string) => {
+    if (!isDeveloperMode && currentUser.rol !== 'desarrollador') {
+      console.warn('Acción denegada: solo el Desarrollador puede eliminar pacientes.');
+      return;
+    }
     setPacientes((prev) => prev.filter((p) => p.id !== id));
     if (isSupabaseConfigured()) {
       supabaseService.deletePaciente(id).catch((e) => console.warn('Supabase deletePaciente error:', e));
@@ -1123,6 +1156,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteProfesional = (id: string) => {
+    if (!isDeveloperMode && currentUser.rol !== 'desarrollador') {
+      console.warn('Acción denegada: solo el Desarrollador puede eliminar profesionales.');
+      return;
+    }
     setProfesionales((prev) => prev.filter((p) => p.id !== id));
     if (isSupabaseConfigured()) {
       supabaseService.deleteProfesional(id).catch((e) => console.warn('Supabase deleteProfesional error:', e));
@@ -1130,6 +1167,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteAllProfesionales = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!isDeveloperMode && currentUser.rol !== 'desarrollador') {
+      return {
+        success: false,
+        error: 'Solo el Desarrollador puede eliminar profesionales. Como Administrador solo puedes deshabilitarlos.',
+      };
+    }
     setProfesionales([]);
     localStorage.setItem(`${LOCAL_STORAGE_KEY}_profesionales`, JSON.stringify([]));
     setSupabaseLiveStats((prev) => (prev ? { ...prev, profesionalesActivos: 0 } : prev));
@@ -1448,9 +1491,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // USUARIOS (Persistidos en la tabla cv_usuarios de Supabase)
+  const sanitizarPermisosPorRol = (rolDestino: Usuario['rol'], permisos: ModuleId[]): ModuleId[] => {
+    return permisos.filter((m) => {
+      if (m === 'pacientes' || m === 'ficha_paciente') return rolDestino === 'desarrollador';
+      if (m === 'gestion_usuarios') return rolDestino === 'administrador' || rolDestino === 'desarrollador';
+      return true;
+    });
+  };
+
   const addUsuario = async (
     usuario: Omit<Usuario, 'id' | 'fechaCreacion'>
   ): Promise<{ success: boolean; error?: string }> => {
+    const isDev = isDeveloperMode || currentUser.rol === 'desarrollador';
+    if (!isDev && currentUser.rol !== 'administrador') {
+      return {
+        success: false,
+        error: 'Solo el Administrador o Desarrollador pueden crear usuarios y editar permisos.',
+      };
+    }
+    if (!isDev && usuario.rol === 'desarrollador') {
+      return { success: false, error: 'Solo el Desarrollador puede asignar rol de Desarrollador.' };
+    }
+
     const cleanUsername = usuario.usuario.trim().toLowerCase();
     if (cleanUsername === 'dev') {
       return { success: false, error: 'El nombre de usuario "DEV" está reservado para el sistema.' };
@@ -1463,6 +1525,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newUsuario: Usuario = {
       ...usuario,
       usuario: cleanUsername,
+      permisosModulos: sanitizarPermisosPorRol(usuario.rol, usuario.permisosModulos || ['dashboard']),
       id: tempId,
       fechaCreacion: new Date().toISOString().split('T')[0],
       ultimoAcceso: 'Nunca',
@@ -1487,8 +1550,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     id: string,
     data: Partial<Usuario>
   ): Promise<{ success: boolean; error?: string }> => {
+    const isDev = isDeveloperMode || currentUser.rol === 'desarrollador';
+    if (!isDev && currentUser.rol !== 'administrador') {
+      return {
+        success: false,
+        error: 'Solo el Administrador o Desarrollador pueden editar usuarios y accesos a módulos.',
+      };
+    }
+    const existing = usuarios.find((u) => u.id === id);
+    if (!isDev && (existing?.rol === 'desarrollador' || data.rol === 'desarrollador')) {
+      return { success: false, error: 'No autorizado para modificar cuentas de Desarrollador.' };
+    }
+
+    const rolFinal = data.rol || existing?.rol || 'general';
+    const sanitizedData: Partial<Usuario> = {
+      ...data,
+      ...(data.permisosModulos
+        ? { permisosModulos: sanitizarPermisosPorRol(rolFinal, data.permisosModulos) }
+        : {}),
+    };
+
     if (isSupabaseConfigured()) {
-      const res = await supabaseService.updateUsuario(id, data);
+      const res = await supabaseService.updateUsuario(id, sanitizedData);
       if (!res.ok) {
         return {
           success: false,
@@ -1497,27 +1580,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, ...data } : u)));
+    setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, ...sanitizedData } : u)));
     return { success: true };
   };
 
   const deleteUsuario = async (id: string): Promise<{ success: boolean; error?: string }> => {
+    const isDev = isDeveloperMode || currentUser.rol === 'desarrollador';
+    if (!isDev) {
+      return {
+        success: false,
+        error: 'Solo el Desarrollador puede eliminar usuarios registrados. Como Administrador solo puedes deshabilitarlos.',
+      };
+    }
+
     const target = usuarios.find((u) => u.id === id);
     if (!target) {
       return { success: false, error: 'Usuario no encontrado.' };
     }
 
-    const isDev = currentUser.rol === 'desarrollador';
-    if (!isDev) {
-      if (target.id === currentUser.id) {
-        return { success: false, error: 'No puede eliminar su propia sesión activa.' };
-      }
-      if (target.rol === 'administrador') {
-        return { success: false, error: 'Solo el Desarrollador puede eliminar cuentas de Administrador.' };
-      }
-      if (usuarios.length <= 1) {
-        return { success: false, error: 'Debe quedar al menos un usuario activo en el sistema.' };
-      }
+    if (target.id === currentUser.id) {
+      return { success: false, error: 'No puede eliminar su propia sesión activa.' };
     }
 
     if (isSupabaseConfigured()) {
@@ -1644,6 +1726,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentTab,
         activeModal,
         setActiveModal,
+        pendingUsuarioProfesionalId,
+        setPendingUsuarioProfesionalId,
         selectedPacienteFichaId,
         setSelectedPacienteFichaId,
         pacientes,

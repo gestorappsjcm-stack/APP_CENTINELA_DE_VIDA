@@ -982,7 +982,7 @@ export const supabaseService = {
           const rawPerms = u.permisosModulos || u.permisos_modulos;
           const rol = (u.rol || 'general') as Usuario['rol'];
           const defaultPerms: Usuario['permisosModulos'] =
-            rol === 'administrador' || rol === 'desarrollador'
+            rol === 'desarrollador'
               ? [
                   'dashboard',
                   'pacientes',
@@ -998,7 +998,21 @@ export const supabaseService = {
                   'reportes',
                   'gestion_usuarios',
                 ]
-              : ['dashboard', 'pacientes', 'ficha_paciente', 'agenda'];
+              : rol === 'administrador'
+                ? [
+                    'dashboard',
+                    'fua',
+                    'agenda',
+                    'triaje',
+                    'atencion',
+                    'display_turnos',
+                    'profesionales',
+                    'programacion_turnos',
+                    'programacion_anual',
+                    'reportes',
+                    'gestion_usuarios',
+                  ]
+                : ['dashboard', 'agenda'];
 
           return {
             id: String(u.id),

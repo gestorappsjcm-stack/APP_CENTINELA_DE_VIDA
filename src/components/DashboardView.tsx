@@ -447,7 +447,7 @@ export const DashboardView: React.FC = () => {
 
                   {!hasAccess ? (
                     <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
-                      <Lock size={10} /> Restringido
+                      <Lock size={10} /> {op.moduleId === 'pacientes' ? 'Solo Desarrollador' : 'Restringido'}
                     </span>
                   ) : (
                     <ArrowRight
