@@ -191,8 +191,8 @@ const splitTextLine = (line: string, sep: '\t' | ';' | ','): string[] => {
 };
 
 export const ModalImportarPacientes: React.FC = () => {
-  const { activeModal, setActiveModal, pacientes, importarPacientesMasivo, currentUser } = useApp();
-  const isDeveloper = currentUser.rol === 'desarrollador';
+  const { activeModal, setActiveModal, pacientes, importarPacientesMasivo, currentUser, isDeveloperMode } = useApp();
+  const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
 
   const [rawText, setRawText] = useState('');
   const [matrixRows, setMatrixRows] = useState<unknown[][]>([]);

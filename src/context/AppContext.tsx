@@ -845,7 +845,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const importarPacientesMasivo = async (
     registros: Omit<Paciente, 'id' | 'fecha_ingreso'>[]
   ): Promise<{ inserted: number; skippedDuplicates: number; errors: string[] }> => {
-    if (currentUser.rol !== 'desarrollador') {
+    if (!isDeveloperMode && currentUser.rol !== 'desarrollador') {
       return {
         inserted: 0,
         skippedDuplicates: 0,

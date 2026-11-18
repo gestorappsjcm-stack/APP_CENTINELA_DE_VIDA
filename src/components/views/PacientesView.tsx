@@ -22,13 +22,14 @@ export const PacientesView: React.FC = () => {
   const {
     pacientes,
     currentUser,
+    isDeveloperMode,
     setActiveModal,
     setEditingPaciente,
     deletePaciente,
     setSelectedPacienteFichaId,
     setCurrentTab,
   } = useApp();
-  const isDeveloper = currentUser.rol === 'desarrollador';
+  const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
   const [searchTerm, setSearchTerm] = useState('');
   const [seguroFilter, setSeguroFilter] = useState('');
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
