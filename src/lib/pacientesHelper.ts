@@ -144,6 +144,23 @@ export const extraerNumeroHcl = (hcl?: string | null): number | null => {
 };
 
 /**
+ * Calcula el siguiente número correlativo de HCL posterior al último registrado.
+ * Si no hay registros previos con HCL numérico, inicia en "100".
+ */
+export const calcularSiguienteHcl = (
+  registros: Array<{ hcl?: string | null }>
+): string => {
+  let maxNum: number | null = null;
+  for (const r of registros) {
+    const n = extraerNumeroHcl(r.hcl);
+    if (n !== null && (maxNum === null || n > maxNum)) {
+      maxNum = n;
+    }
+  }
+  return String(maxNum !== null ? maxNum + 1 : 100);
+};
+
+/**
  * Audita correlativos de HCL en un rango [desde, hasta] detectando saltos, duplicados y registros fuera de rango.
  */
 export const auditarCorrelativoHcl = (

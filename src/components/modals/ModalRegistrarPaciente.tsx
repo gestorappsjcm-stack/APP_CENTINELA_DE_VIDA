@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Paciente, TipoDocumento, TipoSeguro } from '../../types';
 import {
@@ -17,8 +17,13 @@ import {
   Upload,
 } from 'lucide-react';
 import { supabaseService } from '../../services/supabaseService';
+import { isSupabaseConfigured } from '../../lib/supabase';
 import { DISTRITOS_CHINCHA } from '../../lib/distritosHelper';
-import { buscarConflictoPaciente, calcularEdadDesdeFecha } from '../../lib/pacientesHelper';
+import {
+  buscarConflictoPaciente,
+  calcularEdadDesdeFecha,
+  calcularSiguienteHcl,
+} from '../../lib/pacientesHelper';
 
 export const ModalRegistrarPaciente: React.FC = () => {
   const {
@@ -69,12 +74,15 @@ export const ModalRegistrarPaciente: React.FC = () => {
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  const hclEditadoRef = useRef(false);
+
   const resetFormFields = (keepSuccessMessage = false) => {
     setTipoDoc('DNI');
     setNumDoc('');
     setCodigoTemporal('');
     setApellidosNombres('');
-    setHcl('');
+    setHcl(calcularSiguienteHcl(pacientes));
+    hclEditadoRef.current = false;
     setFechaNacimiento('');
     setEdad('');
     setSexo('');
@@ -105,11 +113,24 @@ export const ModalRegistrarPaciente: React.FC = () => {
     setIsSaving(false);
   };
 
-  // Reiniciar el formulario cada vez que se abre el modal de registro
+  // Reiniciar el formulario cada vez que se abre el modal de registro y calcular siguiente HCL
   useEffect(() => {
-    if (activeModal === 'registrarPaciente') {
-      resetFormFields(false);
-    }
+    if (activeModal !== 'registrarPaciente') return;
+    resetFormFields(false);
+
+    if (!isSupabaseConfigured()) return;
+    let active = true;
+    const localNext = parseInt(calcularSiguienteHcl(pacientes), 10) || 100;
+    supabaseService.getSiguienteHcl().then((remoteNext) => {
+      if (!active || !remoteNext || hclEditadoRef.current) return;
+      const remoteNum = parseInt(remoteNext, 10);
+      const bestNext = Number.isFinite(remoteNum) ? String(Math.max(remoteNum, localNext)) : String(localNext);
+      setHcl(bestNext);
+    });
+
+    return () => {
+      active = false;
+    };
   }, [activeModal]);
 
   useEffect(() => {
@@ -519,11 +540,17 @@ export const ModalRegistrarPaciente: React.FC = () => {
               <input
                 type="text"
                 required={tipoDoc === 'INDOCUMENTADO'}
-                placeholder={tipoDoc === 'INDOCUMENTADO' ? 'HCL OBLIGATORIO' : 'Ej: HCL-10492'}
+                placeholder={tipoDoc === 'INDOCUMENTADO' ? 'HCL OBLIGATORIO' : 'Correlativo automático'}
                 value={hcl}
-                onChange={(e) => setHcl(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500"
+                onChange={(e) => {
+                  hclEditadoRef.current = true;
+                  setHcl(e.target.value);
+                }}
+                className="w-full px-3 py-2 text-xs font-mono font-bold text-teal-800 dark:text-teal-300 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-500"
               />
+              <span className="text-[10px] text-teal-600 dark:text-teal-400 mt-1 block">
+                Asignado automáticamente (+1 al último HCL)
+              </span>
             </div>
 
             <div>

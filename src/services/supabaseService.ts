@@ -3,6 +3,7 @@ import { Paciente, Cita, Triaje, AtencionClinica, Profesional, Usuario, FUA } fr
 import { parseMedicamentosList } from '../lib/medicamentosHelper';
 import {
   calcularEdadDesdeFecha,
+  calcularSiguienteHcl,
   deduplicarPacientes,
   normalizarDocumento,
   normalizarHcl,
@@ -245,6 +246,20 @@ export const supabaseService = {
       }
     } catch (err) {
       console.warn('Error consultando HCL para auditoría en Supabase:', err);
+    }
+    return null;
+  },
+
+  async getSiguienteHcl(): Promise<string | null> {
+    const client = getSupabase();
+    if (!client) return null;
+    try {
+      const { data, error } = await client.from('cv_pacientes').select('hcl');
+      if (!error && data) {
+        return calcularSiguienteHcl(data as Array<{ hcl?: string | null }>);
+      }
+    } catch (err) {
+      console.warn('Error obteniendo siguiente HCL de Supabase:', err);
     }
     return null;
   },
