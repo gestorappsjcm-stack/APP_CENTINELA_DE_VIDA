@@ -6,13 +6,13 @@ import { ModalFichaCompletaPaciente } from './ModalFichaCompletaPaciente';
 import { formatDistritoPaciente } from '../../lib/distritosHelper';
 
 export const ModalVerPacientes: React.FC = () => {
-  const { activeModal, setActiveModal, pacientes, setEditingPaciente, deletePaciente, currentUser, isDeveloperMode } = useApp();
+  const { activeModal, setActiveModal, pacientes, setEditingPaciente, deletePaciente, currentUser, isDeveloperMode, canAccess } = useApp();
   const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
   const [searchTerm, setSearchTerm] = useState('');
   const [seguroFilter, setSeguroFilter] = useState('');
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
 
-  if (activeModal !== 'verPacientes' || !isDeveloper) return null;
+  if (activeModal !== 'verPacientes' || !canAccess('pacientes')) return null;
 
   const filtrados = pacientes.filter((p) => {
     const term = searchTerm.toLowerCase();

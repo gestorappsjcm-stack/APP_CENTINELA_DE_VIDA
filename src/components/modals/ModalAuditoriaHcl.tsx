@@ -19,8 +19,7 @@ import {
 } from '../../lib/pacientesHelper';
 
 export const ModalAuditoriaHcl: React.FC = () => {
-  const { activeModal, setActiveModal, pacientes, currentUser, isDeveloperMode } = useApp();
-  const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
+  const { activeModal, setActiveModal, pacientes, canAccess } = useApp();
 
   const [rawRows, setRawRows] = useState<RegistroHclAudit[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -107,7 +106,7 @@ export const ModalAuditoriaHcl: React.FC = () => {
     }
   };
 
-  if (activeModal !== 'auditoriaHcl' || !isDeveloper) return null;
+  if (activeModal !== 'auditoriaHcl' || !canAccess('pacientes')) return null;
 
   return (
     <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-[75] p-4 overflow-y-auto">

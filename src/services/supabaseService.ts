@@ -1001,6 +1001,8 @@ export const supabaseService = {
               : rol === 'administrador'
                 ? [
                     'dashboard',
+                    'pacientes',
+                    'ficha_paciente',
                     'fua',
                     'agenda',
                     'triaje',

@@ -160,6 +160,8 @@ export const mapProfesionToRolYPermisos = (
       rol: 'medico',
       permisosModulos: [
         'dashboard',
+        'pacientes',
+        'ficha_paciente',
         'fua',
         'agenda',
         'atencion',
@@ -179,6 +181,8 @@ export const mapProfesionToRolYPermisos = (
       rol: 'psicologo',
       permisosModulos: [
         'dashboard',
+        'pacientes',
+        'ficha_paciente',
         'fua',
         'agenda',
         'atencion',
@@ -193,6 +197,8 @@ export const mapProfesionToRolYPermisos = (
       rol: 'enfermero',
       permisosModulos: [
         'dashboard',
+        'pacientes',
+        'ficha_paciente',
         'agenda',
         'triaje',
         'display_turnos',
@@ -206,6 +212,8 @@ export const mapProfesionToRolYPermisos = (
       rol: 'admision',
       permisosModulos: [
         'dashboard',
+        'pacientes',
+        'ficha_paciente',
         'agenda',
         'programacion_turnos',
         'display_turnos',

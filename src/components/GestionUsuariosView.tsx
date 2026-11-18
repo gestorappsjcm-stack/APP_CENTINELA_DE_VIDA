@@ -169,7 +169,6 @@ export const GestionUsuariosView: React.FC = () => {
   // Toggle de un permiso específico
   const togglePermiso = (modId: ModuleId) => {
     if (!canEditModuleAccess) return;
-    if (modId === 'pacientes' || modId === 'ficha_paciente') return;
     if (modId === 'gestion_usuarios' && formData.rol !== 'administrador') return;
 
     setFormData((prev) => {
@@ -187,7 +186,6 @@ export const GestionUsuariosView: React.FC = () => {
       setFormData((prev) => ({
         ...prev,
         permisosModulos: MODULOS_SISTEMA.filter((m) => {
-          if (m.id === 'pacientes' || m.id === 'ficha_paciente') return false;
           if (m.id === 'gestion_usuarios' && prev.rol !== 'administrador') return false;
           return true;
         }).map((m) => m.id),
@@ -196,19 +194,19 @@ export const GestionUsuariosView: React.FC = () => {
       setFormData((prev) => ({
         ...prev,
         rol: 'medico',
-        permisosModulos: ['dashboard', 'fua', 'agenda', 'atencion', 'programacion_anual', 'reportes'],
+        permisosModulos: ['dashboard', 'pacientes', 'ficha_paciente', 'fua', 'agenda', 'atencion', 'programacion_anual', 'reportes'],
       }));
     } else if (preset === 'triaje') {
       setFormData((prev) => ({
         ...prev,
         rol: 'enfermero',
-        permisosModulos: ['dashboard', 'agenda', 'triaje', 'display_turnos', 'reportes'],
+        permisosModulos: ['dashboard', 'pacientes', 'ficha_paciente', 'agenda', 'triaje', 'display_turnos', 'reportes'],
       }));
     } else if (preset === 'admision') {
       setFormData((prev) => ({
         ...prev,
         rol: 'admision',
-        permisosModulos: ['dashboard', 'agenda', 'programacion_turnos', 'display_turnos', 'fua'],
+        permisosModulos: ['dashboard', 'pacientes', 'ficha_paciente', 'agenda', 'programacion_turnos', 'display_turnos', 'fua'],
       }));
     } else {
       setFormData((prev) => ({
@@ -337,7 +335,7 @@ export const GestionUsuariosView: React.FC = () => {
         <div className="space-y-1">
           <span className="font-bold">Control de Seguridad y Acceso por Módulos:</span>
           <p>
-            Solo el <strong>Desarrollador</strong> y el <strong>Administrador</strong> pueden editar accesos a módulos (el Administrador únicamente puede inactivar usuarios y no tiene acceso al módulo <strong>Pacientes</strong>). La eliminación permanente y el padrón de <strong>Pacientes</strong> son exclusivos del <strong>Desarrollador</strong>.
+            Solo el <strong>Desarrollador</strong> y el <strong>Administrador</strong> pueden editar accesos a módulos (el Administrador únicamente puede inactivar usuarios o profesionales y no tiene acceso al botón <strong>Importar Excel / Pegar</strong>). La importación masiva y la eliminación permanente de cuentas/profesionales son exclusivas del <strong>Desarrollador</strong>.
           </p>
         </div>
       </div>
@@ -462,7 +460,7 @@ export const GestionUsuariosView: React.FC = () => {
                   <div className="flex flex-wrap gap-1">
                     {isAdmin ? (
                       <span className="bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800">
-                        ⚡ Acceso administrativo (todos los módulos excepto Pacientes)
+                        ⚡ Acceso administrativo completo (sin Importar Excel / Pegar ni borrado permanente)
                       </span>
                     ) : u.permisosModulos.length === 0 ? (
                       <span className="text-[11px] text-rose-500 italic">
@@ -803,7 +801,6 @@ export const GestionUsuariosView: React.FC = () => {
                           ...prev,
                           rol: nuevoRol,
                           permisosModulos: prev.permisosModulos.filter((m) => {
-                            if (m === 'pacientes' || m === 'ficha_paciente') return false;
                             if (m === 'gestion_usuarios' && nuevoRol !== 'administrador') return false;
                             return true;
                           }),
@@ -895,15 +892,14 @@ export const GestionUsuariosView: React.FC = () => {
                   <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl text-xs text-blue-900 dark:text-blue-200 flex items-center gap-2">
                     <Check size={16} className="text-blue-600 shrink-0" />
                     <span>
-                      Como <strong>Administrador</strong>, este usuario accede a los módulos operativos y puede <strong>editar accesos de módulos</strong> e <strong>inactivar</strong> cuentas, sin acceso a <strong>Pacientes</strong> ni eliminación permanente.
+                      Como <strong>Administrador</strong>, este usuario accede a los módulos operativos (incluyendo <strong>Pacientes</strong> y <strong>Atención</strong>) y puede <strong>editar accesos de módulos</strong> e <strong>inactivar</strong> cuentas, sin acceso a <strong>Importar Excel / Pegar</strong> ni eliminación permanente.
                     </span>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1">
                     {MODULOS_SISTEMA.map((mod) => {
-                      const isDevOnlyMod = mod.id === 'pacientes' || mod.id === 'ficha_paciente';
                       const isAdminOnlyMod = mod.id === 'gestion_usuarios';
-                      const isDisabled = !canEditModuleAccess || isDevOnlyMod || isAdminOnlyMod;
+                      const isDisabled = !canEditModuleAccess || isAdminOnlyMod;
                       const isChecked = !isDisabled && formData.permisosModulos.includes(mod.id);
 
                       return (
@@ -927,11 +923,6 @@ export const GestionUsuariosView: React.FC = () => {
                           <div className="text-xs flex-1">
                             <div className="flex items-center justify-between gap-1">
                               <span className="font-semibold block">{mod.label}</span>
-                              {isDevOnlyMod && (
-                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                  Solo Desarrollador
-                                </span>
-                              )}
                               {isAdminOnlyMod && (
                                 <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                                   Solo Admin / Dev

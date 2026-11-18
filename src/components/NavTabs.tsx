@@ -54,11 +54,7 @@ export const NavTabs: React.FC = () => {
           return (
             <div
               key={tab.id}
-              title={
-                tab.moduleId === 'pacientes'
-                  ? 'Módulo exclusivo del Desarrollador'
-                  : 'Módulo no autorizado para su perfil'
-              }
+              title="Módulo no autorizado para su perfil"
               className="py-3.5 px-3.5 text-slate-300 dark:text-slate-700 text-[13px] font-medium flex items-center gap-1.5 opacity-60 cursor-not-allowed whitespace-nowrap select-none"
             >
               <Icon size={16} />

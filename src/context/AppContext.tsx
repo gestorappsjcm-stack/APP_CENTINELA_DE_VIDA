@@ -815,12 +815,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isDev = isDeveloperMode || currentUser.rol === 'desarrollador';
     if (isDev) return true;
 
-    // 1. Solo el Desarrollador tiene acceso a la pestaña Pacientes y lo relacionado con ella
-    if (moduleId === 'pacientes' || moduleId === 'ficha_paciente') {
-      return false;
-    }
-
-    // 2. Solo el Administrador y el Desarrollador pueden editar accesos/usuarios
+    // Solo el Administrador y el Desarrollador pueden editar accesos/usuarios
     if (moduleId === 'gestion_usuarios') {
       return currentUser.rol === 'administrador';
     }
@@ -837,14 +832,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  // PACIENTES (Registro único estricto por Documento y HCL — Exclusivo Desarrollador)
+  // PACIENTES (Registro único estricto por Documento y HCL)
   const addPaciente = async (
     data: Omit<Paciente, 'id' | 'fecha_ingreso'>
   ): Promise<{ success: boolean; message?: string; error?: string }> => {
-    if (!isDeveloperMode && currentUser.rol !== 'desarrollador') {
+    if (!canAccess('pacientes')) {
       return {
         success: false,
-        error: 'Solo el Desarrollador tiene acceso al módulo de Pacientes.',
+        error: 'Su perfil no cuenta con autorización para registrar pacientes.',
       };
     }
     const docLimpio = data.tipo_documento !== 'INDOCUMENTADO' ? normalizarDocumento(data.numero_documento) : '';
@@ -909,12 +904,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updatePaciente = async (id: string, data: Partial<Paciente>): Promise<{ success: boolean; error?: string }> => {
-    const isDev = isDeveloperMode || currentUser.rol === 'desarrollador';
     const isSoloSeguroClinico = Object.keys(data).length === 1 && data.seguro !== undefined;
-    if (!isDev && !isSoloSeguroClinico) {
+    if (!canAccess('pacientes') && !isSoloSeguroClinico) {
       return {
         success: false,
-        error: 'Solo el Desarrollador puede modificar el padrón de pacientes.',
+        error: 'Su perfil no cuenta con autorización para modificar datos del padrón de pacientes.',
       };
     }
     const actual = pacientes.find((p) => p.id === id);
@@ -1066,8 +1060,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deletePaciente = (id: string) => {
-    if (!isDeveloperMode && currentUser.rol !== 'desarrollador') {
-      console.warn('Acción denegada: solo el Desarrollador puede eliminar pacientes.');
+    if (!canAccess('pacientes')) {
+      console.warn('Acción denegada: sin autorización para eliminar pacientes.');
       return;
     }
     setPacientes((prev) => prev.filter((p) => p.id !== id));
@@ -1493,7 +1487,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // USUARIOS (Persistidos en la tabla cv_usuarios de Supabase)
   const sanitizarPermisosPorRol = (rolDestino: Usuario['rol'], permisos: ModuleId[]): ModuleId[] => {
     return permisos.filter((m) => {
-      if (m === 'pacientes' || m === 'ficha_paciente') return rolDestino === 'desarrollador';
       if (m === 'gestion_usuarios') return rolDestino === 'administrador' || rolDestino === 'desarrollador';
       return true;
     });
