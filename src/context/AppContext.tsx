@@ -937,14 +937,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addProfesional = async (
     prof: Omit<Profesional, 'id'>
   ): Promise<{ success: boolean; error?: string }> => {
-    const cleanDni = prof.dni?.trim();
-    if (cleanDni && profesionales.some((p) => p.dni === cleanDni)) {
-      return { success: false, error: `Ya existe un profesional con DNI: ${cleanDni}` };
+    const cleanDoc = prof.dni?.trim().toUpperCase();
+    if (cleanDoc && profesionales.some((p) => (p.dni || '').trim().toUpperCase() === cleanDoc)) {
+      return {
+        success: false,
+        error: `Ya existe un profesional registrado con el documento: ${cleanDoc}`,
+      };
     }
     const tempId = `prof-${Date.now()}`;
     const newProf: Profesional = {
       ...prof,
-      dni: cleanDni || undefined,
+      tipo_documento: prof.tipo_documento || (cleanDoc && !/^\d{8}$/.test(cleanDoc) ? 'CE' : 'DNI'),
+      dni: cleanDoc || undefined,
       id: tempId,
     };
 
@@ -967,13 +971,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     id: string,
     data: Partial<Profesional>
   ): Promise<{ success: boolean; error?: string }> => {
-    const cleanDni = data.dni?.trim();
-    if (cleanDni && profesionales.some((p) => p.id !== id && p.dni === cleanDni)) {
-      return { success: false, error: `Ya existe otro profesional con DNI: ${cleanDni}` };
+    const cleanDoc = data.dni !== undefined ? data.dni.trim().toUpperCase() : undefined;
+    if (
+      cleanDoc &&
+      profesionales.some((p) => p.id !== id && (p.dni || '').trim().toUpperCase() === cleanDoc)
+    ) {
+      return {
+        success: false,
+        error: `Ya existe otro profesional registrado con el documento: ${cleanDoc}`,
+      };
     }
 
+    const normalizedData: Partial<Profesional> = {
+      ...data,
+      ...(data.dni !== undefined ? { dni: cleanDoc || undefined } : {}),
+    };
+
     if (isSupabaseConfigured()) {
-      const res = await supabaseService.updateProfesional(id, data);
+      const res = await supabaseService.updateProfesional(id, normalizedData);
       if (!res.ok) {
         return {
           success: false,
@@ -982,7 +997,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    setProfesionales((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
+    setProfesionales((prev) => prev.map((p) => (p.id === id ? { ...p, ...normalizedData } : p)));
     return { success: true };
   };
 

@@ -38,6 +38,7 @@ export const ProfesionalesView: React.FC = () => {
   const [statusMessage, setStatusMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // Form State
+  const [tipoDocumento, setTipoDocumento] = useState<'DNI' | 'CE' | 'PASAPORTE'>('DNI');
   const [dni, setDni] = useState('');
   const [nombres, setNombres] = useState('');
   const [profesion, setProfesion] = useState('PSICOLOGO');
@@ -60,9 +61,21 @@ export const ProfesionalesView: React.FC = () => {
     );
   });
 
+  const handleTipoDocumentoChange = (nuevoTipo: 'DNI' | 'CE' | 'PASAPORTE') => {
+    setTipoDocumento(nuevoTipo);
+    if (nuevoTipo === 'DNI') {
+      setDni((prev) => prev.replace(/\D/g, '').slice(0, 8));
+    } else if (nuevoTipo === 'CE') {
+      setDni((prev) => prev.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 12));
+    } else {
+      setDni((prev) => prev.replace(/[^A-Za-z0-9-]/g, '').toUpperCase().slice(0, 15));
+    }
+  };
+
   const openCreateModal = () => {
     setEditingProfId(null);
     setFormError('');
+    setTipoDocumento('DNI');
     setDni('');
     setNombres('');
     setProfesion('PSICOLOGO');
@@ -77,9 +90,13 @@ export const ProfesionalesView: React.FC = () => {
 
   const openEditModal = (p: Profesional) => {
     const cons = consultorios.find((c) => c.id === p.consultorioAsignado || c.codigo === p.consultorioAsignado);
+    const doc = (p.dni || '').trim();
+    const tipoDetectado: 'DNI' | 'CE' | 'PASAPORTE' =
+      p.tipo_documento || (doc && !/^\d{8}$/.test(doc) ? 'CE' : 'DNI');
     setEditingProfId(p.id);
     setFormError('');
-    setDni(p.dni || '');
+    setTipoDocumento(tipoDetectado);
+    setDni(doc);
     setNombres(p.apellidos_nombres || '');
     setProfesion(p.profesion || 'PSICOLOGO');
     setColegiatura(p.colegiatura || '');
@@ -96,11 +113,28 @@ export const ProfesionalesView: React.FC = () => {
     setFormError('');
     if (!nombres.trim()) return;
 
+    const docLimpio = dni.trim().toUpperCase();
+    if (docLimpio) {
+      if (tipoDocumento === 'DNI' && !/^\d{8}$/.test(docLimpio)) {
+        setFormError('El DNI debe tener exactamente 8 dígitos numéricos.');
+        return;
+      }
+      if (tipoDocumento === 'CE' && docLimpio.length < 6) {
+        setFormError('El Carnet de Extranjería (CE) debe tener al menos 6 caracteres.');
+        return;
+      }
+      if (tipoDocumento === 'PASAPORTE' && docLimpio.length < 5) {
+        setFormError('El Pasaporte debe tener al menos 5 caracteres.');
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       if (editingProfId) {
         const res = await updateProfesional(editingProfId, {
-          dni: dni.trim() || undefined,
+          tipo_documento: tipoDocumento,
+          dni: docLimpio || undefined,
           apellidos_nombres: nombres.trim().toUpperCase(),
           profesion,
           colegiatura: colegiatura.trim() || undefined,
@@ -117,7 +151,8 @@ export const ProfesionalesView: React.FC = () => {
         setStatusMessage({ type: 'ok', text: 'Profesional y asignación de consultorio actualizados.' });
       } else {
         const res = await addProfesional({
-          dni: dni.trim() || undefined,
+          tipo_documento: tipoDocumento,
+          dni: docLimpio || undefined,
           apellidos_nombres: nombres.trim().toUpperCase(),
           profesion,
           colegiatura: colegiatura.trim() || undefined,
@@ -138,6 +173,7 @@ export const ProfesionalesView: React.FC = () => {
 
       setIsModalOpen(false);
       setEditingProfId(null);
+      setTipoDocumento('DNI');
       setDni('');
       setNombres('');
       setColegiatura('');
@@ -248,7 +284,7 @@ export const ProfesionalesView: React.FC = () => {
         <Search size={15} className="text-slate-400" />
         <input
           type="text"
-          placeholder="Buscar por nombre, especialidad o colegiatura..."
+          placeholder="Buscar por nombre, documento (DNI/CE), especialidad o colegiatura..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full text-xs bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none"
@@ -269,7 +305,7 @@ export const ProfesionalesView: React.FC = () => {
           <p className="text-xs text-slate-500 max-w-md mx-auto">
             {profesionales.length === 0
               ? 'La base de profesionales está en blanco lista para ingresar tu equipo médico y asistencial real.'
-              : 'Prueba buscando con otro nombre, DNI o número de colegiatura.'}
+              : 'Prueba buscando con otro nombre, DNI/CE o número de colegiatura.'}
           </p>
         </div>
       ) : (
@@ -338,7 +374,9 @@ export const ProfesionalesView: React.FC = () => {
                   <div className="text-xs text-slate-500 space-y-1 bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl">
                     {p.dni && (
                       <div className="flex justify-between">
-                        <span>DNI:</span>
+                        <span>
+                          {p.tipo_documento || (/^\d{8}$/.test(p.dni.trim()) ? 'DNI' : 'CE')}:
+                        </span>
                         <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
                           {p.dni}
                         </span>
@@ -452,29 +490,63 @@ export const ProfesionalesView: React.FC = () => {
             )}
 
             <form onSubmit={handleSave} className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-1">
-                  <label className="block font-semibold mb-1">DNI</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Tipo de Documento</label>
+                  <select
+                    value={tipoDocumento}
+                    onChange={(e) => handleTipoDocumentoChange(e.target.value as 'DNI' | 'CE' | 'PASAPORTE')}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-medium"
+                  >
+                    <option value="DNI">DNI (Nacional - 8 dígitos)</option>
+                    <option value="CE">CE (Carnet de Extranjería)</option>
+                    <option value="PASAPORTE">Pasaporte</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">
+                    {tipoDocumento === 'DNI'
+                      ? 'N° DNI'
+                      : tipoDocumento === 'CE'
+                        ? 'N° Carnet de Extranjería (CE)'
+                        : 'N° de Pasaporte'}
+                  </label>
                   <input
                     type="text"
-                    maxLength={8}
-                    placeholder="8 dígitos"
+                    maxLength={tipoDocumento === 'DNI' ? 8 : tipoDocumento === 'CE' ? 12 : 15}
+                    placeholder={
+                      tipoDocumento === 'DNI'
+                        ? '8 dígitos'
+                        : tipoDocumento === 'CE'
+                          ? 'Ej: 001234567 (9 a 12 caracteres)'
+                          : 'Ej: A12345678'
+                    }
                     value={dni}
-                    onChange={(e) => setDni(e.target.value.replace(/\D/g, ''))}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-mono"
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (tipoDocumento === 'DNI') {
+                        setDni(raw.replace(/\D/g, ''));
+                      } else if (tipoDocumento === 'CE') {
+                        setDni(raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase());
+                      } else {
+                        setDni(raw.replace(/[^A-Za-z0-9-]/g, '').toUpperCase());
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-mono uppercase"
                   />
                 </div>
-                <div className="col-span-2">
-                  <label className="block font-semibold mb-1">Apellidos y Nombres *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej: MEDINA ROJAS, LUIS ALBERTO"
-                    value={nombres}
-                    onChange={(e) => setNombres(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg uppercase"
-                  />
-                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Apellidos y Nombres *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: MEDINA ROJAS, LUIS ALBERTO"
+                  value={nombres}
+                  onChange={(e) => setNombres(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg uppercase"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

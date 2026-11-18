@@ -108,7 +108,7 @@ const AppShell: React.FC = () => {
           CSMC Centinela de Vida • Proyecto de la Unidad de Seguros (U.E. 401)
         </span>
         <span className="text-[11px] text-teal-700 dark:text-teal-400 font-semibold">
-          Desarrollado por: Juan Carlos Castillo Magallanes (Informático U.E. 401)
+          Desarrollado por: Juan Carlos Castillo Magallanes — Informático de la Unidad de Seguros (U.E. 401)
         </span>
       </footer>
 

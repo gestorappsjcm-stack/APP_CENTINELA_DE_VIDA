@@ -97,6 +97,7 @@ export type TipoProfesion =
 
 export interface Profesional {
   id: string;
+  tipo_documento?: 'DNI' | 'CE' | 'PASAPORTE';
   dni?: string;
   apellidos_nombres: string;
   profesion: TipoProfesion | string;

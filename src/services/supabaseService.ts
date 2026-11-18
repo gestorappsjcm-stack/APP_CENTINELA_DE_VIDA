@@ -720,19 +720,34 @@ export const supabaseService = {
     try {
       const { data, error } = await client.from('cv_profesionales').select('*').order('apellidos_nombres', { ascending: true });
       if (!error && data) {
-        return data.map((pr: any) => ({
-          id: String(pr.id),
-          dni: pr.dni || '',
-          apellidos_nombres: pr.apellidos_nombres || '',
-          profesion: pr.profesion || 'MEDICO',
-          especialidad: pr.especialidad || '',
-          colegiatura: pr.colegiatura || '',
-          telefono: pr.telefono || '',
-          correo: pr.correo || '',
-          estado: pr.estado || 'ACTIVO',
-          consultorioAsignado: pr.consultorioAsignado || pr.consultorio_id || pr.consultorio_asignado || undefined,
-          turnoHabitual: pr.turnoHabitual || pr.turno_habitual || 'MAÑANA',
-        }));
+        return data.map((pr: any) => {
+          const doc = String(pr.dni || '').trim();
+          const rawTipo = String(pr.tipo_documento || '').trim().toUpperCase();
+          const tipoInferido: 'DNI' | 'CE' | 'PASAPORTE' =
+            rawTipo === 'CE'
+              ? 'CE'
+              : rawTipo === 'PASAPORTE'
+                ? 'PASAPORTE'
+                : rawTipo === 'DNI'
+                  ? 'DNI'
+                  : doc && !/^\d{8}$/.test(doc)
+                    ? 'CE'
+                    : 'DNI';
+          return {
+            id: String(pr.id),
+            tipo_documento: tipoInferido,
+            dni: doc,
+            apellidos_nombres: pr.apellidos_nombres || '',
+            profesion: pr.profesion || 'MEDICO',
+            especialidad: pr.especialidad || '',
+            colegiatura: pr.colegiatura || '',
+            telefono: pr.telefono || '',
+            correo: pr.correo || '',
+            estado: pr.estado || 'ACTIVO',
+            consultorioAsignado: pr.consultorioAsignado || pr.consultorio_id || pr.consultorio_asignado || undefined,
+            turnoHabitual: pr.turnoHabitual || pr.turno_habitual || 'MAÑANA',
+          };
+        });
       }
     } catch (err) {
       console.warn('Error al obtener profesionales de Supabase:', err);
@@ -760,29 +775,41 @@ export const supabaseService = {
         estado: prof.estado || 'ACTIVO',
       };
 
-      const fullPayload: Record<string, any> = {
+      const workingPayload: Record<string, any> = {
         ...minimalPayload,
         ...(generatedUuid ? { id: generatedUuid } : {}),
       };
+      if (prof.tipo_documento) {
+        workingPayload.tipo_documento = prof.tipo_documento;
+      }
       if (prof.consultorioAsignado) {
-        fullPayload.consultorio_id = prof.consultorioAsignado;
+        workingPayload.consultorio_id = prof.consultorioAsignado;
       }
       if (prof.turnoHabitual) {
-        fullPayload.turno_habitual = prof.turnoHabitual;
+        workingPayload.turno_habitual = prof.turnoHabitual;
       }
 
-      // 1. Intento completo con UUID explícito y consultorio_id/turno_habitual
-      const { data, error } = await client.from('cv_profesionales').insert([fullPayload]).select('id');
-      if (!error) {
-        const savedId = data?.[0]?.id ? String(data[0].id) : generatedUuid || null;
-        if (savedId) return { id: savedId };
-      }
-      if (error) {
+      // 1. Intento progresivo descartando solo columnas opcionales inexistentes (ej: tipo_documento, consultorio_id)
+      let lastErr: any = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data, error } = await client.from('cv_profesionales').insert([workingPayload]).select('id');
+        if (!error) {
+          const savedId = data?.[0]?.id ? String(data[0].id) : generatedUuid || null;
+          if (savedId) return { id: savedId };
+        }
+        lastErr = error;
         const rlsCheck = formatSupabaseWriteError('cv_profesionales', error, '');
         if (rlsCheck.isRls) return { id: null, error: rlsCheck.message };
+
+        const missingCol = extractMissingSchemaColumn(error);
+        if (missingCol && missingCol in workingPayload) {
+          delete workingPayload[missingCol];
+          continue;
+        }
+        break;
       }
 
-      // 2. Fallback sin consultorio_id / turno_habitual, manteniendo UUID explícito
+      // 2. Fallback sin consultorio_id / turno_habitual / tipo_documento, manteniendo UUID explícito
       const minimalWithId = generatedUuid ? { ...minimalPayload, id: generatedUuid } : minimalPayload;
       const { data: d2, error: err2 } = await client
         .from('cv_profesionales')
@@ -802,11 +829,11 @@ export const supabaseService = {
         return { id: String(d3[0].id) };
       }
 
-      const lastErr = err3 || err2 || error;
-      console.warn('Error insertando profesional en Supabase:', lastErr);
+      const finalErr = err3 || err2 || lastErr;
+      console.warn('Error insertando profesional en Supabase:', finalErr);
       return {
         id: null,
-        error: formatSupabaseWriteError('cv_profesionales', lastErr, 'No se pudo guardar el profesional en Supabase.').message,
+        error: formatSupabaseWriteError('cv_profesionales', finalErr, 'No se pudo guardar el profesional en Supabase.').message,
       };
     } catch (err: any) {
       console.warn('Error insertando profesional en Supabase:', err);
@@ -831,17 +858,30 @@ export const supabaseService = {
       if (data.correo !== undefined) minimalPayload.correo = data.correo || null;
       if (data.estado !== undefined) minimalPayload.estado = data.estado;
 
-      const payload: Record<string, any> = { ...minimalPayload };
-      if (data.consultorioAsignado !== undefined) payload.consultorio_id = data.consultorioAsignado || null;
-      if (data.turnoHabitual !== undefined) payload.turno_habitual = data.turnoHabitual || null;
+      const workingPayload: Record<string, any> = { ...minimalPayload };
+      if (data.tipo_documento !== undefined) workingPayload.tipo_documento = data.tipo_documento || null;
+      if (data.consultorioAsignado !== undefined) workingPayload.consultorio_id = data.consultorioAsignado || null;
+      if (data.turnoHabitual !== undefined) workingPayload.turno_habitual = data.turnoHabitual || null;
 
-      const { error } = await client.from('cv_profesionales').update(payload).eq('id', id);
-      if (!error) return { ok: true };
+      let lastErr: any = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (Object.keys(workingPayload).length === 0) return { ok: true };
+        const { error } = await client.from('cv_profesionales').update(workingPayload).eq('id', id);
+        if (!error) return { ok: true };
 
-      const rlsCheck = formatSupabaseWriteError('cv_profesionales', error, '');
-      if (rlsCheck.isRls) return { ok: false, error: rlsCheck.message };
+        lastErr = error;
+        const rlsCheck = formatSupabaseWriteError('cv_profesionales', error, '');
+        if (rlsCheck.isRls) return { ok: false, error: rlsCheck.message };
 
-      // Fallback si consultorio_id / turno_habitual no existen como columnas en Supabase
+        const missingCol = extractMissingSchemaColumn(error);
+        if (missingCol && missingCol in workingPayload) {
+          delete workingPayload[missingCol];
+          continue;
+        }
+        break;
+      }
+
+      // Fallback mínimo si fallaron columnas extendidas
       if (Object.keys(minimalPayload).length > 0) {
         const { error: err2 } = await client.from('cv_profesionales').update(minimalPayload).eq('id', id);
         if (!err2) return { ok: true };
@@ -851,10 +891,10 @@ export const supabaseService = {
           error: formatSupabaseWriteError('cv_profesionales', err2, 'No se pudo actualizar el profesional en Supabase.').message,
         };
       }
-      console.warn('Error actualizando profesional en Supabase:', error);
+      console.warn('Error actualizando profesional en Supabase:', lastErr);
       return {
         ok: false,
-        error: formatSupabaseWriteError('cv_profesionales', error, 'No se pudo actualizar el profesional en Supabase.').message,
+        error: formatSupabaseWriteError('cv_profesionales', lastErr, 'No se pudo actualizar el profesional en Supabase.').message,
       };
     } catch (err: any) {
       console.warn('Error actualizando profesional en Supabase:', err);

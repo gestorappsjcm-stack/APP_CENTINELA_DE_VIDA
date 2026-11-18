@@ -203,7 +203,7 @@ export const LoginView: React.FC = () => {
           </p>
           <div className="pt-2 border-t border-slate-800/80 flex flex-col gap-0.5 text-[10px] text-slate-400">
             <span className="font-semibold text-slate-200">Desarrollado por: Juan Carlos Castillo Magallanes</span>
-            <span className="text-blue-400/90 font-mono text-[9px] mt-0.5">Informático de la Unidad de Seguros • U.E. 401 (Asistencia IA)</span>
+            <span className="text-blue-400/90 font-mono text-[9px] mt-0.5">Informático de la Unidad de Seguros • U.E. 401</span>
           </div>
         </div>
 
