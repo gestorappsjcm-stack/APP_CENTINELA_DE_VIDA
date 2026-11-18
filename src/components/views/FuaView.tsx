@@ -336,6 +336,7 @@ export const FuaView: React.FC = () => {
         'DIAGNÓSTICOS': diags,
         'PROFESIONAL RESPONSABLE': prof?.apellidos_nombres || '',
         'COLEGIATURA': prof?.colegiatura || '',
+        'RNE / REG. ESPECIALIDAD': prof?.rne || '',
         'ESTADO': f.estado,
       };
     });

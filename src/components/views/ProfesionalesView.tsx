@@ -43,6 +43,7 @@ export const ProfesionalesView: React.FC = () => {
   const [nombres, setNombres] = useState('');
   const [profesion, setProfesion] = useState('PSICOLOGO');
   const [colegiatura, setColegiatura] = useState('');
+  const [rne, setRne] = useState('');
   const [especialidad, setEspecialidad] = useState('');
   const [correo, setCorreo] = useState('');
   const [telefono, setTelefono] = useState('');
@@ -57,6 +58,7 @@ export const ProfesionalesView: React.FC = () => {
       p.profesion.toLowerCase().includes(term) ||
       (p.dni && p.dni.toLowerCase().includes(term)) ||
       (p.colegiatura && p.colegiatura.toLowerCase().includes(term)) ||
+      (p.rne && p.rne.toLowerCase().includes(term)) ||
       (cons && `${cons.codigo} ${cons.nombre}`.toLowerCase().includes(term))
     );
   });
@@ -80,6 +82,7 @@ export const ProfesionalesView: React.FC = () => {
     setNombres('');
     setProfesion('PSICOLOGO');
     setColegiatura('');
+    setRne('');
     setEspecialidad('');
     setCorreo('');
     setTelefono('');
@@ -100,6 +103,7 @@ export const ProfesionalesView: React.FC = () => {
     setNombres(p.apellidos_nombres || '');
     setProfesion(p.profesion || 'PSICOLOGO');
     setColegiatura(p.colegiatura || '');
+    setRne(p.rne || '');
     setEspecialidad(p.especialidad || '');
     setCorreo(p.correo || '');
     setTelefono(p.telefono || '');
@@ -137,7 +141,8 @@ export const ProfesionalesView: React.FC = () => {
           dni: docLimpio || undefined,
           apellidos_nombres: nombres.trim().toUpperCase(),
           profesion,
-          colegiatura: colegiatura.trim() || undefined,
+          colegiatura: colegiatura.trim().toUpperCase() || undefined,
+          rne: rne.trim().toUpperCase() || undefined,
           especialidad: especialidad.trim() || undefined,
           correo: correo.trim() || undefined,
           telefono: telefono.trim() || undefined,
@@ -155,7 +160,8 @@ export const ProfesionalesView: React.FC = () => {
           dni: docLimpio || undefined,
           apellidos_nombres: nombres.trim().toUpperCase(),
           profesion,
-          colegiatura: colegiatura.trim() || undefined,
+          colegiatura: colegiatura.trim().toUpperCase() || undefined,
+          rne: rne.trim().toUpperCase() || undefined,
           especialidad: especialidad.trim() || undefined,
           correo: correo.trim() || undefined,
           telefono: telefono.trim() || undefined,
@@ -177,6 +183,7 @@ export const ProfesionalesView: React.FC = () => {
       setDni('');
       setNombres('');
       setColegiatura('');
+      setRne('');
       setEspecialidad('');
       setCorreo('');
       setTelefono('');
@@ -284,7 +291,7 @@ export const ProfesionalesView: React.FC = () => {
         <Search size={15} className="text-slate-400" />
         <input
           type="text"
-          placeholder="Buscar por nombre, documento (DNI/CE), especialidad o colegiatura..."
+          placeholder="Buscar por nombre, DNI/CE, especialidad, colegiatura o RNE..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full text-xs bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none"
@@ -388,6 +395,14 @@ export const ProfesionalesView: React.FC = () => {
                         {p.colegiatura || 'No reg.'}
                       </span>
                     </div>
+                    {p.rne && (
+                      <div className="flex justify-between">
+                        <span>Reg. Especialidad (RNE):</span>
+                        <span className="font-mono font-bold text-teal-700 dark:text-teal-300">
+                          {p.rne}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <span>Especialidad:</span>
                       <span className="font-medium text-slate-700 dark:text-slate-300">
@@ -549,7 +564,7 @@ export const ProfesionalesView: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold mb-1">Profesión *</label>
                   <select
@@ -566,13 +581,41 @@ export const ProfesionalesView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-semibold mb-1">Colegiatura (CMP/CPsP)</label>
+                  <label className="block font-semibold mb-1">Especialidad / Subespecialidad</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Psiquiatría de Niños y Adolescentes"
+                    value={especialidad}
+                    onChange={(e) => setEspecialidad(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">
+                    Colegiatura Profesional (CMP / CPsP / CEP)
+                  </label>
                   <input
                     type="text"
                     placeholder="Ej: CMP-65432"
                     value={colegiatura}
-                    onChange={(e) => setColegiatura(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-mono"
+                    onChange={(e) => setColegiatura(e.target.value.toUpperCase())}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-mono uppercase"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">
+                    Reg. de Especialista (RNE) <span className="text-slate-400 font-normal">(si aplica)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej: RNE-29412"
+                    value={rne}
+                    onChange={(e) => setRne(e.target.value.toUpperCase())}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-mono uppercase"
                   />
                 </div>
               </div>
@@ -616,17 +659,6 @@ export const ProfesionalesView: React.FC = () => {
                     </select>
                   </div>
                 </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold mb-1">Especialidad / Subespecialidad</label>
-                <input
-                  type="text"
-                  placeholder="Ej: Psiquiatría de Niños y Adolescentes"
-                  value={especialidad}
-                  onChange={(e) => setEspecialidad(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg"
-                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

@@ -135,6 +135,28 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_KEY = 'centinela_vida_csmc_state_v1';
 
+const VALID_TABS = new Set<string>([
+  'dashboard',
+  'pacientes',
+  'ficha_paciente',
+  'fua',
+  'agenda',
+  'triaje',
+  'atencion',
+  'display_turnos',
+  'profesionales',
+  'programacion_turnos',
+  'programacion_anual',
+  'reportes',
+  'gestion_usuarios',
+]);
+
+const parseHashTab = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  const raw = window.location.hash.replace(/^#\/?/, '').trim().split('?')[0];
+  return raw && VALID_TABS.has(raw) ? raw : null;
+};
+
 const verifyUserPassword = async (stored: string | undefined, input: string): Promise<boolean> => {
   if (!stored) return true;
   if (stored.startsWith('pbkdf2:sha256:')) {
@@ -221,16 +243,97 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return usuarios[0] || INITIAL_USUARIOS[0];
   });
 
-  const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const [selectedPacienteFichaId, setSelectedPacienteFichaIdState] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_selected_ficha_id`) || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const setSelectedPacienteFichaId = (id: string | null) => {
+    setSelectedPacienteFichaIdState(id);
+    try {
+      if (id) {
+        sessionStorage.setItem(`${LOCAL_STORAGE_KEY}_selected_ficha_id`, id);
+      } else {
+        sessionStorage.removeItem(`${LOCAL_STORAGE_KEY}_selected_ficha_id`);
+      }
+    } catch (e) {
+      console.warn('Error guardando paciente ficha:', e);
+    }
+  };
+
+  const [currentTab, setCurrentTabState] = useState<string>(() => {
+    try {
+      const fromHash = parseHashTab();
+      const fromSession = sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_current_tab`);
+      const candidate =
+        fromHash || (fromSession && VALID_TABS.has(fromSession) ? fromSession : 'dashboard');
+      if (candidate === 'ficha_paciente') {
+        const fichaId = sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_selected_ficha_id`);
+        return fichaId ? 'ficha_paciente' : 'pacientes';
+      }
+      return candidate;
+    } catch {
+      return 'dashboard';
+    }
+  });
+
+  const setCurrentTab = (tab: string) => {
+    const safeTab = VALID_TABS.has(tab) ? tab : 'dashboard';
+    setCurrentTabState(safeTab);
+    try {
+      sessionStorage.setItem(`${LOCAL_STORAGE_KEY}_current_tab`, safeTab);
+      if (typeof window !== 'undefined') {
+        const targetHash = `#/${safeTab}`;
+        if (window.location.hash !== targetHash) {
+          window.location.hash = targetHash;
+        }
+      }
+    } catch (e) {
+      console.warn('Error guardando pestaña activa:', e);
+    }
+  };
+
   const [activeModal, setActiveModal] = useState<string | null>(null);
-  const [selectedPacienteFichaId, setSelectedPacienteFichaId] = useState<string | null>(null);
-  const [editingPaciente, setEditingPaciente] = useState<Paciente | null>(null);
   // Por defecto, iniciar SIEMPRE en la pantalla de Login a menos que exista una sesión activa
   const [isLoggedOut, setIsLoggedOut] = useState<boolean>(() => {
     const active = sessionStorage.getItem(`${LOCAL_STORAGE_KEY}_active_session`);
     return !active;
   });
 
+  // Mantener sincronizada la pestaña activa en URL hash / sessionStorage y soportar Atrás/Adelante del navegador
+  useEffect(() => {
+    if (isLoggedOut) return;
+    try {
+      sessionStorage.setItem(`${LOCAL_STORAGE_KEY}_current_tab`, currentTab);
+      const targetHash = `#/${currentTab}`;
+      if (window.location.hash !== targetHash) {
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${targetHash}`);
+      }
+    } catch (e) {
+      console.warn('Error sincronizando hash de pestaña:', e);
+    }
+  }, [currentTab, isLoggedOut]);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hashTab = parseHashTab();
+      if (hashTab) {
+        setCurrentTabState(hashTab);
+        try {
+          sessionStorage.setItem(`${LOCAL_STORAGE_KEY}_current_tab`, hashTab);
+        } catch {
+          // noop
+        }
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const [editingPaciente, setEditingPaciente] = useState<Paciente | null>(null);
   const [pacientes, setPacientes] = useState<Paciente[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_pacientes`);
     if (saved) {
@@ -617,9 +720,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       sessionStorage.removeItem(`${LOCAL_STORAGE_KEY}_active_session`);
       sessionStorage.removeItem(`${LOCAL_STORAGE_KEY}_dev_mode`);
+      sessionStorage.removeItem(`${LOCAL_STORAGE_KEY}_current_tab`);
+      sessionStorage.removeItem(`${LOCAL_STORAGE_KEY}_selected_ficha_id`);
+      if (typeof window !== 'undefined' && window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
     } catch (e) {
       console.warn('Error eliminando sesion:', e);
     }
+    setSelectedPacienteFichaIdState(null);
+    setCurrentTabState('dashboard');
     setIsDeveloperMode(false);
     setIsLoggedOut(true);
   };

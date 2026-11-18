@@ -103,6 +103,7 @@ export interface Profesional {
   profesion: TipoProfesion | string;
   especialidad?: string;
   colegiatura?: string;
+  rne?: string;
   telefono?: string;
   correo?: string;
   estado: 'ACTIVO' | 'INACTIVO';

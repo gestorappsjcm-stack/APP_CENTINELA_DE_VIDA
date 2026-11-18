@@ -964,7 +964,9 @@ export const FuaPreviewModal: React.FC<FuaPreviewModalProps> = ({ fua, onClose }
                   {profesional?.especialidad || 'PSIQUIATRÍA / SALUD MENTAL'}
                 </td>
                 <td className="gc">N° RNE</td>
-                <td style={{ fontWeight: 'bold', textAlign: 'center' }} className="dato-supabase">029412</td>
+                <td style={{ fontWeight: 'bold', textAlign: 'center' }} className="dato-supabase">
+                  {profesional ? profesional.rne || '-' : '029412'}
+                </td>
                 <td className="gc">EGRESADO</td>
                 <td style={{ fontWeight: 'bold', textAlign: 'center' }} className="dato-supabase">SI</td>
               </tr>

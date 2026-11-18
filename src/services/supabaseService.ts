@@ -733,6 +733,22 @@ export const supabaseService = {
                   : doc && !/^\d{8}$/.test(doc)
                     ? 'CE'
                     : 'DNI';
+          const rawCol = String(pr.colegiatura || '').trim();
+          const rawRne = String(pr.rne || '').trim();
+          let colegiaturaParsed = rawCol;
+          let rneParsed = rawRne;
+          if (!rneParsed && rawCol) {
+            const matchPipe = rawCol.match(/^(.*?)\s*\|\s*RNE:\s*(.+)$/i);
+            if (matchPipe) {
+              colegiaturaParsed = matchPipe[1].trim();
+              rneParsed = matchPipe[2].trim();
+            } else if (/^RNE:\s*(.+)$/i.test(rawCol)) {
+              colegiaturaParsed = '';
+              rneParsed = rawCol.replace(/^RNE:\s*/i, '').trim();
+            }
+          } else if (rneParsed && rawCol) {
+            colegiaturaParsed = rawCol.replace(/\s*\|\s*RNE:\s*.+$/i, '').trim();
+          }
           return {
             id: String(pr.id),
             tipo_documento: tipoInferido,
@@ -740,7 +756,8 @@ export const supabaseService = {
             apellidos_nombres: pr.apellidos_nombres || '',
             profesion: pr.profesion || 'MEDICO',
             especialidad: pr.especialidad || '',
-            colegiatura: pr.colegiatura || '',
+            colegiatura: colegiaturaParsed,
+            rne: rneParsed,
             telefono: pr.telefono || '',
             correo: pr.correo || '',
             estado: pr.estado || 'ACTIVO',
@@ -764,12 +781,16 @@ export const supabaseService = {
           ? crypto.randomUUID()
           : undefined;
 
+      const baseCol = (prof.colegiatura || '').trim();
+      const baseRne = (prof.rne || '').trim();
+      const packedCol = baseRne ? (baseCol ? `${baseCol} | RNE: ${baseRne}` : `RNE: ${baseRne}`) : baseCol;
+
       const minimalPayload: Record<string, any> = {
         dni: prof.dni || null,
         apellidos_nombres: prof.apellidos_nombres,
         profesion: prof.profesion,
         especialidad: prof.especialidad || null,
-        colegiatura: prof.colegiatura || null,
+        colegiatura: baseCol || null,
         telefono: prof.telefono || null,
         correo: prof.correo || null,
         estado: prof.estado || 'ACTIVO',
@@ -779,6 +800,9 @@ export const supabaseService = {
         ...minimalPayload,
         ...(generatedUuid ? { id: generatedUuid } : {}),
       };
+      if (baseRne) {
+        workingPayload.rne = baseRne;
+      }
       if (prof.tipo_documento) {
         workingPayload.tipo_documento = prof.tipo_documento;
       }
@@ -789,9 +813,9 @@ export const supabaseService = {
         workingPayload.turno_habitual = prof.turnoHabitual;
       }
 
-      // 1. Intento progresivo descartando solo columnas opcionales inexistentes (ej: tipo_documento, consultorio_id)
+      // 1. Intento progresivo descartando solo columnas opcionales inexistentes
       let lastErr: any = null;
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 6; attempt++) {
         const { data, error } = await client.from('cv_profesionales').insert([workingPayload]).select('id');
         if (!error) {
           const savedId = data?.[0]?.id ? String(data[0].id) : generatedUuid || null;
@@ -804,12 +828,16 @@ export const supabaseService = {
         const missingCol = extractMissingSchemaColumn(error);
         if (missingCol && missingCol in workingPayload) {
           delete workingPayload[missingCol];
+          if (missingCol === 'rne' && baseRne) {
+            workingPayload.colegiatura = packedCol || null;
+            minimalPayload.colegiatura = packedCol || null;
+          }
           continue;
         }
         break;
       }
 
-      // 2. Fallback sin consultorio_id / turno_habitual / tipo_documento, manteniendo UUID explícito
+      // 2. Fallback sin columnas extendidas, conservando UUID explícito
       const minimalWithId = generatedUuid ? { ...minimalPayload, id: generatedUuid } : minimalPayload;
       const { data: d2, error: err2 } = await client
         .from('cv_profesionales')
@@ -859,12 +887,13 @@ export const supabaseService = {
       if (data.estado !== undefined) minimalPayload.estado = data.estado;
 
       const workingPayload: Record<string, any> = { ...minimalPayload };
+      if (data.rne !== undefined) workingPayload.rne = data.rne || null;
       if (data.tipo_documento !== undefined) workingPayload.tipo_documento = data.tipo_documento || null;
       if (data.consultorioAsignado !== undefined) workingPayload.consultorio_id = data.consultorioAsignado || null;
       if (data.turnoHabitual !== undefined) workingPayload.turno_habitual = data.turnoHabitual || null;
 
       let lastErr: any = null;
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 6; attempt++) {
         if (Object.keys(workingPayload).length === 0) return { ok: true };
         const { error } = await client.from('cv_profesionales').update(workingPayload).eq('id', id);
         if (!error) return { ok: true };
@@ -876,6 +905,15 @@ export const supabaseService = {
         const missingCol = extractMissingSchemaColumn(error);
         if (missingCol && missingCol in workingPayload) {
           delete workingPayload[missingCol];
+          if (missingCol === 'rne' && data.rne !== undefined) {
+            const baseCol = (data.colegiatura ?? '').trim();
+            const baseRne = (data.rne ?? '').trim();
+            const packedCol = baseRne ? (baseCol ? `${baseCol} | RNE: ${baseRne}` : `RNE: ${baseRne}`) : baseCol;
+            if (data.colegiatura !== undefined || baseRne) {
+              workingPayload.colegiatura = packedCol || null;
+              minimalPayload.colegiatura = packedCol || null;
+            }
+          }
           continue;
         }
         break;
