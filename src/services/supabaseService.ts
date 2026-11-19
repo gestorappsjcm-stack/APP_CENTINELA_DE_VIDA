@@ -46,6 +46,34 @@ const extractMissingSchemaColumn = (err: any): string | null => {
   return null;
 };
 
+const SUPABASE_PAGE_SIZE = 1000;
+const SUPABASE_MAX_PAGES = 50;
+
+async function fetchAllRows<T = any>(
+  buildPageQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+): Promise<{ data: T[] | null; error: any }> {
+  const allRows: T[] = [];
+
+  for (let page = 0; page < SUPABASE_MAX_PAGES; page++) {
+    const from = page * SUPABASE_PAGE_SIZE;
+    const to = from + SUPABASE_PAGE_SIZE - 1;
+    const { data, error } = await buildPageQuery(from, to);
+
+    if (error) {
+      return { data: null, error };
+    }
+
+    const batch = Array.isArray(data) ? data : [];
+    allRows.push(...batch);
+
+    if (batch.length < SUPABASE_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  return { data: allRows, error: null };
+}
+
 export const supabaseService = {
   // Test de conexión robusto multivariable
   async checkConnection(): Promise<{ connected: boolean; message: string; details?: any }> {
@@ -164,10 +192,23 @@ export const supabaseService = {
     if (!client) return null;
 
     try {
-      const { data, error } = await client.from('cv_pacientes').select('*').order('apellidos_nombres', { ascending: true });
+      const { data, error } = await fetchAllRows((from, to) =>
+        client
+          .from('cv_pacientes')
+          .select('*')
+          .order('apellidos_nombres', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to)
+      );
       if (error) {
         // Intentar tabla pac_datos_personales como alternativa
-        const { data: altData, error: altErr } = await client.from('pac_datos_personales').select('*');
+        const { data: altData, error: altErr } = await fetchAllRows((from, to) =>
+          client
+            .from('pac_datos_personales')
+            .select('*')
+            .order('apellidos_nombres', { ascending: true })
+            .range(from, to)
+        );
         if (!altErr && altData) {
           const mappedAlt: Paciente[] = altData.map((p: any) => ({
             id: p.id ? String(p.id) : `pac-${Date.now()}`,
@@ -233,9 +274,13 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return null;
     try {
-      const { data, error } = await client
-        .from('cv_pacientes')
-        .select('id, hcl, numero_documento, apellidos_nombres');
+      const { data, error } = await fetchAllRows((from, to) =>
+        client
+          .from('cv_pacientes')
+          .select('id, hcl, numero_documento, apellidos_nombres')
+          .order('id', { ascending: true })
+          .range(from, to)
+      );
       if (!error && data) {
         return data.map((p: any) => ({
           id: String(p.id),
@@ -254,7 +299,13 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return null;
     try {
-      const { data, error } = await client.from('cv_pacientes').select('hcl');
+      const { data, error } = await fetchAllRows((from, to) =>
+        client
+          .from('cv_pacientes')
+          .select('hcl, id')
+          .order('id', { ascending: true })
+          .range(from, to)
+      );
       if (!error && data) {
         return calcularSiguienteHcl(data as Array<{ hcl?: string | null }>);
       }
@@ -530,7 +581,14 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return null;
     try {
-      const { data, error } = await client.from('cv_citas').select('*').order('fecha_cita', { ascending: false });
+      const { data, error } = await fetchAllRows((from, to) =>
+        client
+          .from('cv_citas')
+          .select('*')
+          .order('fecha_cita', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to)
+      );
       if (!error && data) {
         return data.map((c: any) => ({
           id: String(c.id),
@@ -619,7 +677,14 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return null;
     try {
-      const { data, error } = await client.from('cv_atenciones').select('*').order('fecha_atencion', { ascending: false });
+      const { data, error } = await fetchAllRows((from, to) =>
+        client
+          .from('cv_atenciones')
+          .select('*')
+          .order('fecha_atencion', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to)
+      );
       if (!error && data) {
         return data.map((a: any) => ({
           id: String(a.id),
@@ -670,7 +735,14 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return null;
     try {
-      const { data, error } = await client.from('cv_triajes').select('*').order('fecha', { ascending: false });
+      const { data, error } = await fetchAllRows((from, to) =>
+        client
+          .from('cv_triajes')
+          .select('*')
+          .order('fecha', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to)
+      );
       if (!error && data) {
         return data.map((t: any) => ({
           id: String(t.id),
@@ -718,7 +790,14 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return null;
     try {
-      const { data, error } = await client.from('cv_profesionales').select('*').order('apellidos_nombres', { ascending: true });
+      const { data, error } = await fetchAllRows((from, to) =>
+        client
+          .from('cv_profesionales')
+          .select('*')
+          .order('apellidos_nombres', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to)
+      );
       if (!error && data) {
         return data.map((pr: any) => {
           const doc = String(pr.dni || '').trim();
@@ -976,7 +1055,13 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return null;
     try {
-      const { data, error } = await client.from('cv_usuarios').select('*');
+      const { data, error } = await fetchAllRows((from, to) =>
+        client
+          .from('cv_usuarios')
+          .select('*')
+          .order('id', { ascending: true })
+          .range(from, to)
+      );
       if (!error && data) {
         return data.map((u: any) => {
           const rawPerms = u.permisosModulos || u.permisos_modulos;
@@ -1231,7 +1316,14 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return null;
     try {
-      const { data, error } = await client.from('cv_fua_historial').select('*').order('fecha', { ascending: false });
+      const { data, error } = await fetchAllRows((from, to) =>
+        client
+          .from('cv_fua_historial')
+          .select('*')
+          .order('fecha', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to)
+      );
       if (!error && data) {
         return data.map((f: any) => ({
           id: String(f.id),
@@ -1335,10 +1427,13 @@ export const supabaseService = {
     if (!client) return null;
     try {
       // 1. Intentar tabla principal diagnosticospico
-      let { data, error } = await client
-        .from('diagnosticospico')
-        .select('*')
-        .order('codigo', { ascending: true });
+      let { data, error } = await fetchAllRows((from, to) =>
+        client
+          .from('diagnosticospico')
+          .select('*')
+          .order('codigo', { ascending: true })
+          .range(from, to)
+      );
 
       // 2. Si falla o no existe, intentar tablas alternativas posibles
       if (error || !data || data.length === 0) {
@@ -1369,10 +1464,13 @@ export const supabaseService = {
     if (!client) return null;
     try {
       // 1. Intentar tabla principal pac_procedimientos
-      let { data, error } = await client
-        .from('pac_procedimientos')
-        .select('*')
-        .order('cpms', { ascending: true });
+      let { data, error } = await fetchAllRows((from, to) =>
+        client
+          .from('pac_procedimientos')
+          .select('*')
+          .order('cpms', { ascending: true })
+          .range(from, to)
+      );
 
       // 2. Si falla o no existe, intentar tablas alternativas posibles
       if (error || !data || data.length === 0) {
