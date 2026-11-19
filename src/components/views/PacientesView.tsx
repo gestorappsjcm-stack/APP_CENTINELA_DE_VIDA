@@ -27,37 +27,15 @@ export const PacientesView: React.FC = () => {
     setActiveModal,
     setEditingPaciente,
     deletePaciente,
-    deleteAllPacientes,
     setSelectedPacienteFichaId,
     setCurrentTab,
   } = useApp();
   const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
   const [searchTerm, setSearchTerm] = useState('');
+  const [tipoDocumentoFilter, setTipoDocumentoFilter] = useState('');
   const [seguroFilter, setSeguroFilter] = useState('');
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
-  const [isDeletingAll, setIsDeletingAll] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-
-  const handleConfirmDeleteAll = async () => {
-    setIsDeletingAll(true);
-    setStatusMessage(null);
-    const res = await deleteAllPacientes();
-    setIsDeletingAll(false);
-    setConfirmDeleteAll(false);
-    if (res.success) {
-      setStatusMessage({
-        type: 'ok',
-        text: 'Tabla de pacientes limpiada correctamente (Supabase y memoria local). Ya puedes usar "Importar Excel / Pegar" para subir el nuevo padrón completo.',
-      });
-    } else {
-      setStatusMessage({
-        type: 'err',
-        text: res.error || 'No se pudo limpiar la tabla de pacientes.',
-      });
-    }
-  };
 
   const filtrados = pacientes.filter((p) => {
     const term = searchTerm.toLowerCase();
@@ -67,8 +45,9 @@ export const PacientesView: React.FC = () => {
       (p.codigo_temporal && p.codigo_temporal.toLowerCase().includes(term)) ||
       (p.hcl && p.hcl.toLowerCase().includes(term));
 
+    const matchesTipoDoc = !tipoDocumentoFilter || p.tipo_documento === tipoDocumentoFilter;
     const matchesSeguro = !seguroFilter || p.seguro === seguroFilter;
-    return matchesSearch && matchesSeguro;
+    return matchesSearch && matchesTipoDoc && matchesSeguro;
   });
 
   const exportarExcel = () => {
@@ -148,45 +127,6 @@ export const PacientesView: React.FC = () => {
             </button>
           )}
 
-          {isDeveloper && pacientes.length > 0 && (
-            confirmDeleteAll ? (
-              <div className="flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 px-3 py-1.5 rounded-xl text-xs">
-                <span className="font-semibold text-rose-700 dark:text-rose-300">
-                  ¿Vaciar los {pacientes.length}?
-                </span>
-                <button
-                  type="button"
-                  disabled={isDeletingAll}
-                  onClick={handleConfirmDeleteAll}
-                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer disabled:opacity-50"
-                >
-                  {isDeletingAll ? 'Limpiando...' : 'Sí, limpiar tabla'}
-                </button>
-                <button
-                  type="button"
-                  disabled={isDeletingAll}
-                  onClick={() => setConfirmDeleteAll(false)}
-                  className="px-2 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 font-semibold cursor-pointer"
-                >
-                  Cancelar
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setStatusMessage(null);
-                  setConfirmDeleteAll(true);
-                }}
-                className="flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all"
-                title="Vaciar toda la tabla de pacientes para cargar un nuevo Excel completo (Exclusivo Desarrollador)"
-              >
-                <Trash2 size={15} />
-                <span>Limpiar Tabla ({pacientes.length})</span>
-              </button>
-            )
-          )}
-
           <button
             onClick={exportarExcel}
             className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer shadow-xs transition-all"
@@ -205,28 +145,9 @@ export const PacientesView: React.FC = () => {
         </div>
       </div>
 
-      {statusMessage && (
-        <div
-          className={`p-3.5 rounded-xl text-xs font-medium border flex items-center justify-between gap-3 ${
-            statusMessage.type === 'ok'
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-              : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
-          }`}
-        >
-          <span>{statusMessage.text}</span>
-          <button
-            type="button"
-            onClick={() => setStatusMessage(null)}
-            className="text-current opacity-70 hover:opacity-100 cursor-pointer shrink-0"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
       {/* Toolbar Filtros */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
-        <div className="relative w-full sm:w-80">
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
+        <div className="relative w-full lg:w-80">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -237,20 +158,37 @@ export const PacientesView: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <span className="text-xs text-slate-500 font-medium">Condición de Seguro:</span>
-          <select
-            value={seguroFilter}
-            onChange={(e) => setSeguroFilter(e.target.value)}
-            className="text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
-          >
-            <option value="">Todos los seguros</option>
-            <option value="SIS">SIS</option>
-            <option value="ESSALUD">EsSalud</option>
-            <option value="EPS">EPS</option>
-            <option value="PRIVADO">Privado</option>
-            <option value="NINGUNO">Ninguno (Particular)</option>
-          </select>
+        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">Tipo Documento:</span>
+            <select
+              value={tipoDocumentoFilter}
+              onChange={(e) => setTipoDocumentoFilter(e.target.value)}
+              className="text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
+            >
+              <option value="">Todos los documentos</option>
+              <option value="DNI">DNI</option>
+              <option value="CE">Carnet de Extranjería (CE)</option>
+              <option value="PASAPORTE">Pasaporte</option>
+              <option value="INDOCUMENTADO">Indocumentado</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">Condición de Seguro:</span>
+            <select
+              value={seguroFilter}
+              onChange={(e) => setSeguroFilter(e.target.value)}
+              className="text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
+            >
+              <option value="">Todos los seguros</option>
+              <option value="SIS">SIS</option>
+              <option value="ESSALUD">EsSalud</option>
+              <option value="EPS">EPS</option>
+              <option value="PRIVADO">Privado</option>
+              <option value="NINGUNO">Ninguno (Particular)</option>
+            </select>
+          </div>
         </div>
       </div>
 

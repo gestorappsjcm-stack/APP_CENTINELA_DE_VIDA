@@ -525,36 +525,6 @@ export const supabaseService = {
     }
   },
 
-  async deleteAllPacientes(): Promise<{ ok: boolean; error?: string }> {
-    const client = getSupabase();
-    if (!client) return { ok: true };
-    try {
-      const { error } = await client.from('cv_pacientes').delete().not('id', 'is', null);
-      if (error) {
-        console.warn('Error limpiando tabla cv_pacientes en Supabase:', error);
-        const rlsCheck = formatSupabaseWriteError('cv_pacientes', error, error.message);
-        if (rlsCheck.isRls) {
-          return { ok: false, error: rlsCheck.message };
-        }
-        if (error.code === '23503') {
-          return {
-            ok: false,
-            error:
-              'Existen citas, triajes, atenciones o FUAs vinculados en Supabase. Si deseas reiniciar todo el padrón con cascada, ejecuta en Supabase SQL Editor: TRUNCATE TABLE public.cv_pacientes RESTART IDENTITY CASCADE;',
-          };
-        }
-        return { ok: false, error: error.message };
-      }
-      return { ok: true };
-    } catch (err: any) {
-      console.warn('Excepción limpiando cv_pacientes en Supabase:', err);
-      return {
-        ok: false,
-        error: err?.message || 'Error al limpiar la tabla cv_pacientes en Supabase.',
-      };
-    }
-  },
-
   // 3. CITAS: cv_citas y vistas v_cv_citas_hoy, v_cv_citas_por_atender, v_cv_citas_proximas
   async getCitas(): Promise<Cita[] | null> {
     const client = getSupabase();

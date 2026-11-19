@@ -312,24 +312,13 @@ const splitTextLine = (line: string, sep: '\t' | ';' | ','): string[] => {
 };
 
 export const ModalImportarPacientes: React.FC = () => {
-  const {
-    activeModal,
-    setActiveModal,
-    pacientes,
-    importarPacientesMasivo,
-    deleteAllPacientes,
-    currentUser,
-    isDeveloperMode,
-  } = useApp();
+  const { activeModal, setActiveModal, pacientes, importarPacientesMasivo, currentUser, isDeveloperMode } = useApp();
   const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
 
   const [rawText, setRawText] = useState('');
   const [matrixRows, setMatrixRows] = useState<unknown[][]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
-  const [confirmClearDb, setConfirmClearDb] = useState(false);
-  const [isClearingDb, setIsClearingDb] = useState(false);
-  const [clearDbMsg, setClearDbMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [importResult, setImportResult] = useState<{
     inserted: number;
     skippedDuplicates: number;
@@ -338,31 +327,8 @@ export const ModalImportarPacientes: React.FC = () => {
   const [parseError, setParseError] = useState<string | null>(null);
 
   const handleClose = () => {
-    if (isImporting || isClearingDb) return;
-    setConfirmClearDb(false);
-    setClearDbMsg(null);
+    if (isImporting) return;
     setActiveModal(null);
-  };
-
-  const handleClearDbNow = async () => {
-    if (!isDeveloper || isClearingDb || isImporting) return;
-    setIsClearingDb(true);
-    setClearDbMsg(null);
-    const res = await deleteAllPacientes();
-    setIsClearingDb(false);
-    setConfirmClearDb(false);
-    if (res.success) {
-      setImportResult(null);
-      setClearDbMsg({
-        type: 'ok',
-        text: 'Padrón anterior eliminado correctamente. Todos los registros del nuevo Excel figuran listos para importar.',
-      });
-    } else {
-      setClearDbMsg({
-        type: 'err',
-        text: res.error || 'No se pudo vaciar la tabla de pacientes.',
-      });
-    }
   };
 
   const handlePasteTextChange = (text: string) => {
@@ -621,62 +587,6 @@ export const ModalImportarPacientes: React.FC = () => {
 
         {/* Body */}
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
-          {/* Opción de reemplazo limpio del padrón anterior (Exclusivo Desarrollador) */}
-          {pacientes.length > 0 && (
-            <div className="p-3 bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
-              <div className="flex items-center gap-2 text-rose-900 dark:text-rose-200">
-                <AlertTriangle size={15} className="text-rose-600 shrink-0" />
-                <span>
-                  Actualmente hay <strong>{pacientes.length}</strong> paciente(s) registrado(s). Si vas a cargar un Excel completo desde cero, limpia primero el padrón anterior.
-                </span>
-              </div>
-              {confirmClearDb ? (
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    disabled={isClearingDb}
-                    onClick={handleClearDbNow}
-                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold cursor-pointer disabled:opacity-50"
-                  >
-                    {isClearingDb ? 'Limpiando...' : `Sí, vaciar ${pacientes.length} registros`}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isClearingDb}
-                    onClick={() => setConfirmClearDb(false)}
-                    className="px-2.5 py-1.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setClearDbMsg(null);
-                    setConfirmClearDb(true);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-900 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-lg font-bold cursor-pointer shrink-0 transition-colors"
-                >
-                  <Trash2 size={13} />
-                  <span>Limpiar Tabla ({pacientes.length})</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {clearDbMsg && (
-            <div
-              className={`p-3 rounded-xl border text-xs font-medium ${
-                clearDbMsg.type === 'ok'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-                  : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
-              }`}
-            >
-              {clearDbMsg.text}
-            </div>
-          )}
-
           {/* Opciones de carga */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2 space-y-2">

@@ -72,7 +72,6 @@ interface AppContextType {
     registros: Omit<Paciente, 'id' | 'fecha_ingreso'>[]
   ) => Promise<{ inserted: number; skippedDuplicates: number; errors: string[] }>;
   deletePaciente: (id: string) => void;
-  deleteAllPacientes: () => Promise<{ success: boolean; error?: string }>;
 
   // FUA (SIS)
   fuas: FUA[];
@@ -1071,29 +1070,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const deleteAllPacientes = async (): Promise<{ success: boolean; error?: string }> => {
-    if (!isDeveloperMode && currentUser.rol !== 'desarrollador') {
-      return {
-        success: false,
-        error: 'Solo el Desarrollador puede limpiar la tabla completa de pacientes.',
-      };
-    }
-
-    if (isSupabaseConfigured()) {
-      const res = await supabaseService.deleteAllPacientes();
-      if (!res.ok) {
-        return { success: false, error: res.error };
-      }
-    }
-
-    setPacientes([]);
-    setEditingPaciente(null);
-    setSelectedPacienteFichaId(null);
-    localStorage.setItem(`${LOCAL_STORAGE_KEY}_pacientes`, JSON.stringify([]));
-    setSupabaseLiveStats((prev) => (prev ? { ...prev, totalPacientes: 0 } : prev));
-    return { success: true };
-  };
-
   // PROFESIONALES
   const addProfesional = async (
     prof: Omit<Profesional, 'id'>
@@ -1754,7 +1730,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatePaciente,
         importarPacientesMasivo,
         deletePaciente,
-        deleteAllPacientes,
         fuas,
         fuaConfig,
         updateFuaConfig,
