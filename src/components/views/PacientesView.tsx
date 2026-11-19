@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Paciente } from '../../types';
 import {
@@ -8,13 +8,16 @@ import {
   FileSpreadsheet,
   Eye,
   Trash2,
-  Filter,
   FileText,
   Edit2,
   Upload,
   Check,
   X,
   ClipboardCheck,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import { ModalFichaCompletaPaciente } from '../modals/ModalFichaCompletaPaciente';
 import { formatDistritoPaciente } from '../../lib/distritosHelper';
@@ -36,19 +39,64 @@ export const PacientesView: React.FC = () => {
   const [seguroFilter, setSeguroFilter] = useState('');
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState<25 | 50 | 100>(25);
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const filtrados = pacientes.filter((p) => {
-    const term = searchTerm.toLowerCase();
-    const matchesSearch =
-      p.apellidos_nombres.toLowerCase().includes(term) ||
-      (p.numero_documento && p.numero_documento.includes(term)) ||
-      (p.codigo_temporal && p.codigo_temporal.toLowerCase().includes(term)) ||
-      (p.hcl && p.hcl.toLowerCase().includes(term));
+  const filtrados = useMemo(
+    () =>
+      pacientes.filter((p) => {
+        const term = searchTerm.toLowerCase();
+        const matchesSearch =
+          p.apellidos_nombres.toLowerCase().includes(term) ||
+          (p.numero_documento && p.numero_documento.includes(term)) ||
+          (p.codigo_temporal && p.codigo_temporal.toLowerCase().includes(term)) ||
+          (p.hcl && p.hcl.toLowerCase().includes(term));
 
-    const matchesTipoDoc = !tipoDocumentoFilter || p.tipo_documento === tipoDocumentoFilter;
-    const matchesSeguro = !seguroFilter || p.seguro === seguroFilter;
-    return matchesSearch && matchesTipoDoc && matchesSeguro;
-  });
+        const matchesTipoDoc = !tipoDocumentoFilter || p.tipo_documento === tipoDocumentoFilter;
+        const matchesSeguro = !seguroFilter || p.seguro === seguroFilter;
+        return matchesSearch && matchesTipoDoc && matchesSeguro;
+      }),
+    [pacientes, searchTerm, tipoDocumentoFilter, seguroFilter]
+  );
+
+  const totalRegistros = filtrados.length;
+  const totalPages = Math.max(1, Math.ceil(totalRegistros / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, tipoDocumentoFilter, seguroFilter, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const startIndex = (safePage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalRegistros);
+
+  const paginados = useMemo(
+    () => filtrados.slice(startIndex, endIndex),
+    [filtrados, startIndex, endIndex]
+  );
+
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, idx) => idx + 1);
+    }
+    const pages: Array<number | 'ellipsis-left' | 'ellipsis-right'> = [1];
+    const windowStart = Math.max(2, safePage - 1);
+    const windowEnd = Math.min(totalPages - 1, safePage + 1);
+
+    if (windowStart > 2) pages.push('ellipsis-left');
+    for (let p = windowStart; p <= windowEnd; p++) {
+      pages.push(p);
+    }
+    if (windowEnd < totalPages - 1) pages.push('ellipsis-right');
+    pages.push(totalPages);
+    return pages;
+  }, [totalPages, safePage]);
 
   const exportarExcel = () => {
     const headers = [
@@ -209,14 +257,14 @@ export const PacientesView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
-              {filtrados.length === 0 ? (
+              {paginados.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-400 text-xs">
                     No se encontraron pacientes registrados con los filtros aplicados.
                   </td>
                 </tr>
               ) : (
-                filtrados.map((p) => {
+                paginados.map((p) => {
                   const docLabel =
                     p.tipo_documento === 'INDOCUMENTADO'
                       ? p.codigo_temporal
@@ -319,6 +367,93 @@ export const PacientesView: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Paginación */}
+        <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-slate-500 dark:text-slate-400">Mostrar:</span>
+              <select
+                aria-label="Filas por página"
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value) as 25 | 50 | 100)}
+                className="text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:border-teal-500 cursor-pointer"
+              >
+                <option value={25}>25 por página</option>
+                <option value={50}>50 por página</option>
+                <option value={100}>100 por página</option>
+              </select>
+            </div>
+            <span className="text-slate-500 dark:text-slate-400">
+              {totalRegistros === 0
+                ? 'Mostrando 0 de 0 pacientes'
+                : `Mostrando ${startIndex + 1}–${endIndex} de ${totalRegistros} pacientes`}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setCurrentPage(1)}
+              disabled={safePage <= 1}
+              title="Primera página"
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+            >
+              <ChevronsLeft size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={safePage <= 1}
+              title="Página anterior"
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+            >
+              <ChevronLeft size={14} />
+            </button>
+
+            <div className="flex items-center gap-1 px-1">
+              {pageNumbers.map((item) =>
+                typeof item === 'number' ? (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setCurrentPage(item)}
+                    className={`min-w-[28px] h-7 px-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      item === safePage
+                        ? 'bg-[#1A2B4A] text-white shadow-xs'
+                        : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {item}
+                  </button>
+                ) : (
+                  <span key={item} className="px-1 text-xs text-slate-400 select-none">
+                    ...
+                  </span>
+                )
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={safePage >= totalPages}
+              title="Página siguiente"
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+            >
+              <ChevronRight size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={safePage >= totalPages}
+              title="Última página"
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+            >
+              <ChevronsRight size={14} />
+            </button>
+          </div>
         </div>
 
         {/* Ficha Completa Integral del Paciente */}
