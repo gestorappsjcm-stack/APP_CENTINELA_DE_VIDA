@@ -116,59 +116,180 @@ const detectTipoDoc = (doc: string): TipoDocumento => {
   return 'PASAPORTE';
 };
 
+const normalizeTipoDoc = (raw: unknown, doc: string): TipoDocumento => {
+  const s = cleanSpaces(raw)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+  if (s.includes('INDOC') || s.includes('SIN DOC')) return 'INDOCUMENTADO';
+  if (s === 'CE' || s.includes('EXTRANJ') || s.includes('CARNET')) return 'CE';
+  if (s.includes('PASA')) return 'PASAPORTE';
+  if (s.includes('DNI')) return 'DNI';
+  return detectTipoDoc(doc);
+};
+
+const normalizeEstadoPaciente = (raw: unknown): 'activo' | 'inactivo' => {
+  const s = cleanSpaces(raw).toUpperCase();
+  if (s === 'INACTIVO' || s === 'BAJA' || s === 'PASIVO') return 'inactivo';
+  return 'activo';
+};
+
 const isHeaderRow = (cells: string[]): boolean => {
   const joined = cells.map(normalizeHeaderKey).join(' ');
   return (
     joined.includes('APELLIDOS Y NOMBRES') ||
-    (joined.includes('DNI') && joined.includes('HCL')) ||
+    joined.includes('NOMBRES Y APELLIDOS') ||
+    (joined.includes('APELLIDO') && joined.includes('NOMBRE')) ||
+    ((joined.includes('DNI') || joined.includes('DOCUMENTO')) &&
+      (joined.includes('HCL') ||
+        joined.includes('HISTORIA') ||
+        joined.includes('PACIENTE') ||
+        joined.includes('NOMBRE'))) ||
     joined.includes('FECHA DE NACIMIENTO')
   );
 };
 
 interface ColumnMap {
+  tipoDoc: number;
   doc: number;
   nombres: number;
+  apellidoPaterno: number;
+  apellidoMaterno: number;
+  soloNombres: number;
   hcl: number;
   fechaNac: number;
   edad: number;
   sexo: number;
+  estadoCivil: number;
+  gradoInstruccion: number;
   seguro: number;
   distrito: number;
   direccion: number;
   celular: number;
+  estado: number;
+  tutorNombres: number;
+  tutorDoc: number;
+  tutorCelular: number;
+  tutorParentesco: number;
 }
 
 const DEFAULT_COL_MAP: ColumnMap = {
+  tipoDoc: -1,
   doc: 0,
   nombres: 1,
+  apellidoPaterno: -1,
+  apellidoMaterno: -1,
+  soloNombres: -1,
   hcl: 2,
   fechaNac: 3,
   edad: 4,
   sexo: 5,
+  estadoCivil: -1,
+  gradoInstruccion: -1,
   seguro: 6,
   distrito: 7,
   direccion: 8,
   celular: 9,
+  estado: -1,
+  tutorNombres: -1,
+  tutorDoc: -1,
+  tutorCelular: -1,
+  tutorParentesco: -1,
+};
+
+const EMPTY_COL_MAP: ColumnMap = {
+  tipoDoc: -1,
+  doc: -1,
+  nombres: -1,
+  apellidoPaterno: -1,
+  apellidoMaterno: -1,
+  soloNombres: -1,
+  hcl: -1,
+  fechaNac: -1,
+  edad: -1,
+  sexo: -1,
+  estadoCivil: -1,
+  gradoInstruccion: -1,
+  seguro: -1,
+  distrito: -1,
+  direccion: -1,
+  celular: -1,
+  estado: -1,
+  tutorNombres: -1,
+  tutorDoc: -1,
+  tutorCelular: -1,
+  tutorParentesco: -1,
 };
 
 const detectColumnMap = (headerCells: string[]): ColumnMap => {
-  const map: ColumnMap = { ...DEFAULT_COL_MAP };
+  const map: ColumnMap = { ...EMPTY_COL_MAP };
   headerCells.forEach((cell, idx) => {
     const k = normalizeHeaderKey(cell);
     if (!k) return;
-    if (k.includes('DNI') || k.includes('DOCUMENTO') || k.includes('PASAPORTE')) map.doc = idx;
-    else if (k.includes('APELLIDO') || k.includes('NOMBRE') || k.includes('PACIENTE')) map.nombres = idx;
-    else if (k.includes('HCL') || k.includes('HISTORIA')) map.hcl = idx;
-    else if (k.includes('NACIM') || k.includes('F. NAC') || k.includes('FNAC')) map.fechaNac = idx;
-    else if (k === 'EDAD') map.edad = idx;
-    else if (k.includes('SEXO') || k.includes('GENERO')) map.sexo = idx;
-    else if (k.includes('SEGURO') || k.includes('IAFAS')) map.seguro = idx;
-    else if (k.includes('DISTRITO') || k.includes('PROCEDENCIA')) map.distrito = idx;
-    else if (k.includes('DIRECCION') || k.includes('DOMICILIO')) map.direccion = idx;
-    else if (k.includes('TELEF') || k.includes('CELUL')) map.celular = idx;
+
+    if (k.includes('TUTOR') || k.includes('APODERADO')) {
+      if (k.includes('DNI') || k.includes('DOC')) map.tutorDoc = idx;
+      else if (k.includes('CEL') || k.includes('TEL')) map.tutorCelular = idx;
+      else if (k.includes('PARENT')) map.tutorParentesco = idx;
+      else map.tutorNombres = idx;
+      return;
+    }
+
+    if (k.includes('TIPO') && k.includes('DOC')) map.tipoDoc = idx;
+    else if (
+      k === 'DNI' ||
+      k.includes('NRO DOC') ||
+      k.includes('N° DOC') ||
+      k.includes('NUMERO DOC') ||
+      k.includes('DOCUMENTO') ||
+      k.includes('PASAPORTE')
+    ) {
+      map.doc = idx;
+    } else if (k.includes('APELLIDO PATERNO') || k === 'AP. PATERNO' || k === 'PATERNO') {
+      map.apellidoPaterno = idx;
+    } else if (k.includes('APELLIDO MATERNO') || k === 'AP. MATERNO' || k === 'MATERNO') {
+      map.apellidoMaterno = idx;
+    } else if (k.includes('APELLIDOS Y NOMBRES') || k.includes('NOMBRES Y APELLIDOS') || k.includes('PACIENTE')) {
+      map.nombres = idx;
+    } else if (k === 'APELLIDOS') {
+      map.apellidoPaterno = idx;
+    } else if (k === 'NOMBRES' || k === 'NOMBRE') {
+      map.soloNombres = idx;
+    } else if (k.includes('HCL') || k.includes('HISTORIA')) {
+      map.hcl = idx;
+    } else if (k.includes('NACIM') || k.includes('F. NAC') || k.includes('FNAC') || k.includes('F.NAC')) {
+      map.fechaNac = idx;
+    } else if (k === 'EDAD' || k.startsWith('EDAD ')) {
+      map.edad = idx;
+    } else if (k.includes('SEXO') || k.includes('GENERO')) {
+      map.sexo = idx;
+    } else if (k.includes('ESTADO CIVIL')) {
+      map.estadoCivil = idx;
+    } else if (k.includes('INSTRUCC') || k.includes('ESCOLAR')) {
+      map.gradoInstruccion = idx;
+    } else if (k.includes('SEGURO') || k.includes('IAFAS') || k.includes('FINANC')) {
+      map.seguro = idx;
+    } else if (k.includes('DISTRITO') || k.includes('PROCEDENCIA')) {
+      map.distrito = idx;
+    } else if (k.includes('DIRECCION') || k.includes('DOMICILIO')) {
+      map.direccion = idx;
+    } else if (k.includes('TELEF') || k.includes('CELUL')) {
+      map.celular = idx;
+    } else if (k === 'ESTADO') {
+      map.estado = idx;
+    } else if (k.includes('PARENTESCO')) {
+      map.tutorParentesco = idx;
+    }
   });
+
+  if (map.nombres === -1 && map.soloNombres !== -1 && map.apellidoPaterno === -1) {
+    map.nombres = map.soloNombres;
+    map.soloNombres = -1;
+  }
   return map;
 };
+
+const getCell = (row: unknown[], idx: number): unknown => (idx >= 0 ? row[idx] : undefined);
 
 const splitTextLine = (line: string, sep: '\t' | ';' | ','): string[] => {
   if (sep === '\t') return line.split('\t').map((c) => cleanSpaces(c));
@@ -191,13 +312,24 @@ const splitTextLine = (line: string, sep: '\t' | ';' | ','): string[] => {
 };
 
 export const ModalImportarPacientes: React.FC = () => {
-  const { activeModal, setActiveModal, pacientes, importarPacientesMasivo, currentUser, isDeveloperMode } = useApp();
+  const {
+    activeModal,
+    setActiveModal,
+    pacientes,
+    importarPacientesMasivo,
+    deleteAllPacientes,
+    currentUser,
+    isDeveloperMode,
+  } = useApp();
   const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
 
   const [rawText, setRawText] = useState('');
   const [matrixRows, setMatrixRows] = useState<unknown[][]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [confirmClearDb, setConfirmClearDb] = useState(false);
+  const [isClearingDb, setIsClearingDb] = useState(false);
+  const [clearDbMsg, setClearDbMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [importResult, setImportResult] = useState<{
     inserted: number;
     skippedDuplicates: number;
@@ -206,8 +338,31 @@ export const ModalImportarPacientes: React.FC = () => {
   const [parseError, setParseError] = useState<string | null>(null);
 
   const handleClose = () => {
-    if (isImporting) return;
+    if (isImporting || isClearingDb) return;
+    setConfirmClearDb(false);
+    setClearDbMsg(null);
     setActiveModal(null);
+  };
+
+  const handleClearDbNow = async () => {
+    if (!isDeveloper || isClearingDb || isImporting) return;
+    setIsClearingDb(true);
+    setClearDbMsg(null);
+    const res = await deleteAllPacientes();
+    setIsClearingDb(false);
+    setConfirmClearDb(false);
+    if (res.success) {
+      setImportResult(null);
+      setClearDbMsg({
+        type: 'ok',
+        text: 'Padrón anterior eliminado correctamente. Todos los registros del nuevo Excel figuran listos para importar.',
+      });
+    } else {
+      setClearDbMsg({
+        type: 'err',
+        text: res.error || 'No se pudo vaciar la tabla de pacientes.',
+      });
+    }
   };
 
   const handlePasteTextChange = (text: string) => {
@@ -282,27 +437,45 @@ export const ModalImportarPacientes: React.FC = () => {
 
     for (let i = startIdx; i < matrixRows.length; i++) {
       const row = matrixRows[i];
-      const docRaw = normalizarDocumento(cleanSpaces(row[colMap.doc]));
-      const nombres = cleanSpaces(row[colMap.nombres]).toUpperCase();
-      const hcl = normalizarHcl(cleanSpaces(row[colMap.hcl]));
-      const fechaNac = parseFechaToIso(row[colMap.fechaNac]);
+      const docRaw = normalizarDocumento(cleanSpaces(getCell(row, colMap.doc)));
+      const nombreDirecto = cleanSpaces(getCell(row, colMap.nombres)).toUpperCase();
+      const nombreCombinado = [
+        cleanSpaces(getCell(row, colMap.apellidoPaterno)),
+        cleanSpaces(getCell(row, colMap.apellidoMaterno)),
+        cleanSpaces(getCell(row, colMap.soloNombres)),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toUpperCase();
+      const nombres = nombreDirecto || nombreCombinado;
+
+      const hcl = normalizarHcl(cleanSpaces(getCell(row, colMap.hcl)));
+      const fechaNac = parseFechaToIso(getCell(row, colMap.fechaNac));
       const edadAuto = calcularEdadDesdeFecha(fechaNac);
-      const edadRawNum = Number(cleanSpaces(row[colMap.edad]));
+      const edadRawNum = Number(cleanSpaces(getCell(row, colMap.edad)));
       const edadFinal =
         typeof edadAuto === 'number'
           ? edadAuto
           : Number.isFinite(edadRawNum) && edadRawNum >= 0
           ? Math.round(edadRawNum)
           : undefined;
-      const sexo = normalizeSexo(row[colMap.sexo]);
-      const segNorm = normalizeSeguro(row[colMap.seguro]);
-      const distParsed = parseDistritoParaFormulario(cleanSpaces(row[colMap.distrito]));
-      const direccion = cleanSpaces(row[colMap.direccion]).toUpperCase();
-      const celular = cleanSpaces(row[colMap.celular]);
+      const sexo = normalizeSexo(getCell(row, colMap.sexo));
+      const segNorm = normalizeSeguro(getCell(row, colMap.seguro));
+      const distParsed = parseDistritoParaFormulario(cleanSpaces(getCell(row, colMap.distrito)));
+      const direccion = cleanSpaces(getCell(row, colMap.direccion)).toUpperCase();
+      const celular = cleanSpaces(getCell(row, colMap.celular));
+      const estadoCivil = cleanSpaces(getCell(row, colMap.estadoCivil)).toUpperCase() || 'SOLTERO';
+      const gradoInstruccion = cleanSpaces(getCell(row, colMap.gradoInstruccion)).toUpperCase() || 'SECUNDARIA';
+      const estadoPac = normalizeEstadoPaciente(getCell(row, colMap.estado));
+      const tutorNombres = cleanSpaces(getCell(row, colMap.tutorNombres)).toUpperCase();
+      const tutorDoc = normalizarDocumento(cleanSpaces(getCell(row, colMap.tutorDoc)));
+      const tutorCelular = cleanSpaces(getCell(row, colMap.tutorCelular));
+      const tutorParentesco = cleanSpaces(getCell(row, colMap.tutorParentesco)).toUpperCase() || 'PADRE';
+      const tieneTutor = Boolean(tutorNombres || tutorDoc);
 
       if (!nombres && !docRaw && !hcl) continue;
 
-      const tipoDoc = detectTipoDoc(docRaw);
+      const tipoDoc = normalizeTipoDoc(getCell(row, colMap.tipoDoc), docRaw);
       const pacienteObj: Omit<Paciente, 'id' | 'fecha_ingreso'> = {
         tipo_documento: tipoDoc,
         numero_documento: tipoDoc !== 'INDOCUMENTADO' ? docRaw : undefined,
@@ -315,15 +488,25 @@ export const ModalImportarPacientes: React.FC = () => {
         fecha_nacimiento: fechaNac,
         edad: edadFinal,
         sexo,
-        estado_civil: 'SOLTERO',
-        grado_instruccion: 'SECUNDARIA',
+        estado_civil: estadoCivil,
+        grado_instruccion: gradoInstruccion,
         seguro: segNorm.seguro,
         seguro_otro_especificar: segNorm.otro,
         direccion: direccion || undefined,
         distrito: distParsed.distrito,
         distrito_otro_especificar: distParsed.distrito === 'OTRO' ? distParsed.distritoOtro : undefined,
         celular: celular || undefined,
-        estado: 'activo',
+        estado: estadoPac,
+        tiene_tutor: tieneTutor,
+        ...(tieneTutor
+          ? {
+              tutor_nombres: tutorNombres || undefined,
+              tutor_tipo_documento: tutorDoc ? detectTipoDoc(tutorDoc) : 'DNI',
+              tutor_numero_documento: tutorDoc || undefined,
+              tutor_celular: tutorCelular || undefined,
+              tutor_parentesco: tutorParentesco,
+            }
+          : {}),
       };
 
       if (!nombres) {
@@ -438,6 +621,62 @@ export const ModalImportarPacientes: React.FC = () => {
 
         {/* Body */}
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          {/* Opción de reemplazo limpio del padrón anterior (Exclusivo Desarrollador) */}
+          {pacientes.length > 0 && (
+            <div className="p-3 bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+              <div className="flex items-center gap-2 text-rose-900 dark:text-rose-200">
+                <AlertTriangle size={15} className="text-rose-600 shrink-0" />
+                <span>
+                  Actualmente hay <strong>{pacientes.length}</strong> paciente(s) registrado(s). Si vas a cargar un Excel completo desde cero, limpia primero el padrón anterior.
+                </span>
+              </div>
+              {confirmClearDb ? (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    disabled={isClearingDb}
+                    onClick={handleClearDbNow}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold cursor-pointer disabled:opacity-50"
+                  >
+                    {isClearingDb ? 'Limpiando...' : `Sí, vaciar ${pacientes.length} registros`}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isClearingDb}
+                    onClick={() => setConfirmClearDb(false)}
+                    className="px-2.5 py-1.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClearDbMsg(null);
+                    setConfirmClearDb(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-900 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-lg font-bold cursor-pointer shrink-0 transition-colors"
+                >
+                  <Trash2 size={13} />
+                  <span>Limpiar Tabla ({pacientes.length})</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {clearDbMsg && (
+            <div
+              className={`p-3 rounded-xl border text-xs font-medium ${
+                clearDbMsg.type === 'ok'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                  : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+              }`}
+            >
+              {clearDbMsg.text}
+            </div>
+          )}
+
           {/* Opciones de carga */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2 space-y-2">
