@@ -51,6 +51,39 @@ const getGeminiClient = () => {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const extractApiErrorInfo = (err: any): { status: number; message: string } => {
+  let status = Number(err?.status || err?.code || err?.error?.code || 0);
+  let rawMsg = String(err?.message || err?.error?.message || 'Error procesando el PDF con Gemini.');
+
+  if (rawMsg.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(rawMsg);
+      if (parsed?.error) {
+        status = status || Number(parsed.error.code || 0);
+        rawMsg = String(parsed.error.message || rawMsg);
+      }
+    } catch {
+      // Keep original rawMsg
+    }
+  }
+
+  return { status, message: rawMsg };
+};
+
+const isTransientOverloadError = (err: any): boolean => {
+  const { status, message } = extractApiErrorInfo(err);
+  const lower = message.toLowerCase();
+  return (
+    status === 429 ||
+    status === 503 ||
+    lower.includes('high demand') ||
+    lower.includes('unavailable') ||
+    lower.includes('temporarily unavailable') ||
+    lower.includes('overloaded') ||
+    lower.includes('rate limit')
+  );
+};
+
 async function generateWithRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
   let lastErr: any;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -58,17 +91,10 @@ async function generateWithRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promi
       return await fn();
     } catch (err: any) {
       lastErr = err;
-      const status = Number(err?.status || err?.code || 0);
-      const msg = String(err?.message || '').toLowerCase();
-      const isTransient =
-        status === 429 ||
-        status === 503 ||
-        msg.includes('temporarily unavailable') ||
-        msg.includes('rate limit');
-      if (!isTransient || attempt === maxRetries) {
+      if (!isTransientOverloadError(err) || attempt === maxRetries) {
         throw err;
       }
-      await sleep(700 * Math.pow(2, attempt));
+      await sleep(800 * Math.pow(2, attempt));
     }
   }
   throw lastErr;
@@ -93,7 +119,7 @@ app.post('/api/turnos/parse-pdf', async (req, res) => {
     if (!ai) {
       res.status(500).json({
         error:
-          'No se encontró la variable GEMINI_API_KEY en el servidor. Configura la clave en Settings > Secrets para habilitar la lectura inteligente de PDF.',
+          'No se encontró la variable GEMINI_API_KEY en el servidor local/AI Studio. Configura la clave en Settings > Secrets de AI Studio para habilitar la lectura inteligente de PDF.',
       });
       return;
     }
@@ -158,97 +184,111 @@ Reglas críticas de lectura de tabla e interpretación:
    - N, NOCHE, u otro código especial legible -> tipoTurno = "OTRO" (conserva codigoOriginal exacto, ej. "N")
 5. Omite días completamente vacíos o con "-" / sin programación para mantener el JSON compacto.`;
 
-    const response = await generateWithRetry(() =>
-      ai.models.generateContent({
-        model: 'gemini-4-hydrogen',
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType: 'application/pdf',
-                data: rawBase64,
-              },
+    const buildRequestParams = (modelName: string) => ({
+      model: modelName,
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: rawBase64,
             },
-            { text: promptText },
-          ],
-        },
-        config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          systemInstruction:
-            'Eres un asistente especializado en digitalizar cuadros visuales de Rol de Turnos asistenciales del sector salud peruano (MINSA/CSMC) con precisión exacta por fila (profesional) y columna (día del mes 1..31), incluyendo celdas combinadas de vacaciones o licencias. Devuelve siempre JSON válido siguiendo el esquema.',
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              anio: {
-                type: Type.INTEGER,
-                description: 'Año del rol de turnos detectado en el documento (ej. 2026).',
-              },
-              mes: {
-                type: Type.INTEGER,
-                description: 'Mes del 1 al 12 detectado en el documento.',
-              },
-              observaciones: {
-                type: Type.STRING,
-                description: 'Breve resumen de lo detectado o notas relevantes del PDF (máximo 2 oraciones).',
-              },
-              profesionalesDetectados: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    nombrePdf: {
-                      type: Type.STRING,
-                      description: 'Apellidos y nombres tal como aparecen en el PDF.',
-                    },
-                    dniPdf: {
-                      type: Type.STRING,
-                      description: 'DNI o documento si aparece en el PDF, o cadena vacía.',
-                    },
-                    profesionalIdSugerido: {
-                      type: Type.STRING,
-                      description: 'ID del profesional del catálogo que mejor coincide, o cadena vacía si no coincide.',
-                    },
-                    consultorioCodigoSugerido: {
-                      type: Type.STRING,
-                      description: 'Código de consultorio (ej. PSICO-01) si se deduce del área/servicio del PDF, o cadena vacía.',
-                    },
-                    turnos: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          dia: {
-                            type: Type.INTEGER,
-                            description: 'Número de día del mes (1 a 31).',
-                          },
-                          codigoOriginal: {
-                            type: Type.STRING,
-                            description: 'Texto o sigla original en la celda (ej. M, T, MT, L, D, V).',
-                          },
-                          tipoTurno: {
-                            type: Type.STRING,
-                            description:
-                              'Clasificación normalizada: MAÑANA | TARDE | MAÑANA_TARDE | LIBRE | DESCANSO | VACACIONES | FERIADO | OTRO',
-                          },
-                          consultorioCodigo: {
-                            type: Type.STRING,
-                            description: 'Código de consultorio específico para ese día si difiere, o cadena vacía.',
-                          },
+          },
+          { text: promptText },
+        ],
+      },
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        systemInstruction:
+          'Eres un asistente especializado en digitalizar cuadros visuales de Rol de Turnos asistenciales del sector salud peruano (MINSA/CSMC) con precisión exacta por fila (profesional) y columna (día del mes 1..31), incluyendo celdas combinadas de vacaciones o licencias. Devuelve siempre JSON válido siguiendo el esquema.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            anio: {
+              type: Type.INTEGER,
+              description: 'Año del rol de turnos detectado en el documento (ej. 2026).',
+            },
+            mes: {
+              type: Type.INTEGER,
+              description: 'Mes del 1 al 12 detectado en el documento.',
+            },
+            observaciones: {
+              type: Type.STRING,
+              description: 'Breve resumen de lo detectado o notas relevantes del PDF (máximo 2 oraciones).',
+            },
+            profesionalesDetectados: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  nombrePdf: {
+                    type: Type.STRING,
+                    description: 'Apellidos y nombres tal como aparecen en el PDF.',
+                  },
+                  dniPdf: {
+                    type: Type.STRING,
+                    description: 'DNI o documento si aparece en el PDF, o cadena vacía.',
+                  },
+                  profesionalIdSugerido: {
+                    type: Type.STRING,
+                    description: 'ID del profesional del catálogo que mejor coincide, o cadena vacía si no coincide.',
+                  },
+                  consultorioCodigoSugerido: {
+                    type: Type.STRING,
+                    description: 'Código de consultorio (ej. PSICO-01) si se deduce del área/servicio del PDF, o cadena vacía.',
+                  },
+                  turnos: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        dia: {
+                          type: Type.INTEGER,
+                          description: 'Número de día del mes (1 a 31).',
                         },
-                        required: ['dia', 'codigoOriginal', 'tipoTurno'],
+                        codigoOriginal: {
+                          type: Type.STRING,
+                          description: 'Texto o sigla original en la celda (ej. M, T, MT, L, D, V).',
+                        },
+                        tipoTurno: {
+                          type: Type.STRING,
+                          description:
+                            'Clasificación normalizada: MAÑANA | TARDE | MAÑANA_TARDE | LIBRE | DESCANSO | VACACIONES | FERIADO | OTRO',
+                        },
+                        consultorioCodigo: {
+                          type: Type.STRING,
+                          description: 'Código de consultorio específico para ese día si difiere, o cadena vacía.',
+                        },
                       },
+                      required: ['dia', 'codigoOriginal', 'tipoTurno'],
                     },
                   },
-                  required: ['nombrePdf', 'turnos'],
                 },
+                required: ['nombrePdf', 'turnos'],
               },
             },
-            required: ['anio', 'mes', 'profesionalesDetectados'],
           },
+          required: ['anio', 'mes', 'profesionalesDetectados'],
         },
-      })
-    );
+      },
+    });
+
+    let response;
+    try {
+      response = await generateWithRetry(
+        () => ai.models.generateContent(buildRequestParams('gemini-4-hydrogen')),
+        1
+      );
+    } catch (primaryErr: any) {
+      if (!isTransientOverloadError(primaryErr)) {
+        throw primaryErr;
+      }
+      response = await generateWithRetry(
+        () => ai.models.generateContent(buildRequestParams('gemini-3.1-flash-lite')),
+        1
+      );
+    }
 
     const rawText = (response.text || '').trim();
     if (!rawText) {
@@ -260,10 +300,10 @@ Reglas críticas de lectura de tabla e interpretación:
     res.json(parsed);
   } catch (err: any) {
     console.error('Error en /api/turnos/parse-pdf:', err);
-    const status = Number(err?.status || err?.code || 500);
-    const rawMsg = String(err?.message || 'Error procesando el PDF con Gemini.');
+    const { status, message: rawMsg } = extractApiErrorInfo(err);
+    const lower = rawMsg.toLowerCase();
 
-    if (status === 403 || status === 400 && rawMsg.toLowerCase().includes('api key')) {
+    if (status === 403 || (status === 400 && lower.includes('api key'))) {
       res.status(403).json({
         error:
           'Clave de API inválida o sin permisos. Verifica GEMINI_API_KEY en Settings > Secrets.',
@@ -275,6 +315,14 @@ Reglas críticas de lectura de tabla e interpretación:
       res.status(429).json({
         error:
           'Límite de solicitudes alcanzado temporalmente en Gemini API. Espera unos segundos e intenta nuevamente.',
+      });
+      return;
+    }
+
+    if (status === 503 || lower.includes('high demand') || lower.includes('unavailable')) {
+      res.status(503).json({
+        error:
+          'El servicio de análisis de PDF está experimentando alta demanda temporal (503). Espera unos segundos y pulsa "Reintentar análisis".',
       });
       return;
     }

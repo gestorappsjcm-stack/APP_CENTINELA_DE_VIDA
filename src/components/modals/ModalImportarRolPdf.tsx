@@ -20,6 +20,7 @@ import {
   Calendar,
   Building2,
   UserCheck,
+  RefreshCw,
 } from 'lucide-react';
 
 interface TurnoPdfItem {
@@ -124,6 +125,7 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
 
   const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const lastFileRef = useRef<File | null>(null);
 
   const [fileName, setFileName] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -143,6 +145,7 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
   if (!isOpen || !isDeveloper) return null;
 
   const resetModalState = () => {
+    lastFileRef.current = null;
     setFileName('');
     setErrorMsg(null);
     setObservacionesPdf('');
@@ -180,6 +183,7 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
       return;
     }
 
+    lastFileRef.current = file;
     setFileName(file.name);
     setErrorMsg(null);
     setObservacionesPdf('');
@@ -433,9 +437,21 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
           </div>
 
           {errorMsg && (
-            <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-start gap-2.5">
-              <AlertTriangle size={16} className="text-rose-600 shrink-0 mt-0.5" />
-              <span>{errorMsg}</span>
+            <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-start gap-2.5 flex-1 min-w-[220px]">
+                <AlertTriangle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                <span>{errorMsg}</span>
+              </div>
+              {lastFileRef.current && !isAnalyzing && (
+                <button
+                  type="button"
+                  onClick={() => lastFileRef.current && procesarPdf(lastFileRef.current)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] shrink-0 cursor-pointer"
+                >
+                  <RefreshCw size={12} />
+                  <span>Reintentar análisis</span>
+                </button>
+              )}
             </div>
           )}
 
