@@ -12,6 +12,7 @@ import {
   getTodayIso,
 } from '../../lib/turnosHelper';
 import { ModalImportarRolPdf } from '../modals/ModalImportarRolPdf';
+import { ModalImportarRolExcel } from '../modals/ModalImportarRolExcel';
 import {
   Clock,
   Calendar,
@@ -20,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  FileSpreadsheet,
   Users,
   Copy,
   Wand2,
@@ -109,6 +111,7 @@ export const ProgramacionTurnosView: React.FC = () => {
   } = useApp();
 
   const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
+  const canImportExcel = isDeveloper || currentUser.rol === 'administrador';
   const todayIso = getTodayIso();
   const hoy = useMemo(() => new Date(), []);
 
@@ -120,6 +123,7 @@ export const ProgramacionTurnosView: React.FC = () => {
   const [busqueda, setBusqueda] = useState<string>('');
   const [showBaseFija, setShowBaseFija] = useState<boolean>(false);
   const [showPdfModal, setShowPdfModal] = useState<boolean>(false);
+  const [showExcelModal, setShowExcelModal] = useState<boolean>(false);
   const [confirmClearMes, setConfirmClearMes] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [pincel, setPincel] = useState<PincelModo>('SELECT');
@@ -437,6 +441,17 @@ CREATE POLICY "Permitir acceso turnos centinela" ON public.cv_turnos_programados
           >
             Hoy
           </button>
+
+          {canImportExcel && (
+            <button
+              type="button"
+              onClick={() => setShowExcelModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm cursor-pointer transition-colors"
+            >
+              <FileSpreadsheet size={15} />
+              <span>Importar Rol Excel</span>
+            </button>
+          )}
 
           {isDeveloper && (
             <button
@@ -1138,6 +1153,24 @@ CREATE POLICY "Permitir acceso turnos centinela" ON public.cv_turnos_programados
           </div>
         )}
       </div>
+
+      {/* Modal Importar Rol desde Excel (Administrador y Desarrollador) */}
+      {canImportExcel && (
+        <ModalImportarRolExcel
+          isOpen={showExcelModal}
+          onClose={() => setShowExcelModal(false)}
+          anioActual={anio}
+          mesActual={mes}
+          onApplied={(appliedAnio, appliedMes, totalTurnos) => {
+            setAnio(appliedAnio);
+            setMes(appliedMes);
+            setVistaMode('profesionales');
+            notify(
+              `Se asignaron ${totalTurnos} turnos desde el Excel para ${MESES_NOMBRES[appliedMes - 1]} ${appliedAnio}.`
+            );
+          }}
+        />
+      )}
 
       {/* Modal Importar Rol desde PDF (Exclusivo Desarrollador) */}
       {isDeveloper && (
