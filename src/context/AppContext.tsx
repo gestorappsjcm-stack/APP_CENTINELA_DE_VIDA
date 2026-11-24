@@ -122,6 +122,7 @@ interface AppContextType {
     nuevosTurnos: AsignacionTurnoDia[],
     opciones?: {
       reemplazarMes?: { anio: number; mes: number };
+      reemplazarProfesionalesMes?: { anio: number; mes: number; profesionalIds: string[] };
       modo?: 'por_profesional' | 'por_consultorio';
       consultoriosPorProf?: Record<string, string>;
     }
@@ -1579,6 +1580,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     nuevosTurnos: AsignacionTurnoDia[],
     opciones?: {
       reemplazarMes?: { anio: number; mes: number };
+      reemplazarProfesionalesMes?: { anio: number; mes: number; profesionalIds: string[] };
       modo?: 'por_profesional' | 'por_consultorio';
       consultoriosPorProf?: Record<string, string>;
     }
@@ -1597,6 +1599,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (opciones?.reemplazarMes) {
         const prefix = `${opciones.reemplazarMes.anio}-${String(opciones.reemplazarMes.mes).padStart(2, '0')}-`;
         base = base.filter((t) => !t.fecha.startsWith(prefix));
+      } else if (opciones?.reemplazarProfesionalesMes) {
+        const prefix = `${opciones.reemplazarProfesionalesMes.anio}-${String(opciones.reemplazarProfesionalesMes.mes).padStart(2, '0')}-`;
+        const profSet = new Set(opciones.reemplazarProfesionalesMes.profesionalIds);
+        base = base.filter((t) => !(t.fecha.startsWith(prefix) && profSet.has(t.profesional_id)));
       } else if (opciones?.modo === 'por_consultorio') {
         const incomingKeys = new Set(
           nuevosTurnos.map((t) =>

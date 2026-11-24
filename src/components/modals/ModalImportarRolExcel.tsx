@@ -6,6 +6,7 @@ import {
   MESES_NOMBRES,
   aplicarCodigoTurnoProfesional,
   formatFechaIso,
+  getDayOfWeekIndex,
   getDaysInMonth,
   getDiaSemanaLetra,
   matchConsultorioPorCodigoONombre,
@@ -153,6 +154,7 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
   const [targetAnio, setTargetAnio] = useState<number>(anioActual);
   const [targetMes, setTargetMes] = useState<number>(mesActual);
   const [reemplazarMes, setReemplazarMes] = useState<boolean>(false);
+  const [omitirTurnosDomingo, setOmitirTurnosDomingo] = useState<boolean>(true);
   const [filas, setFilas] = useState<FilaRevisionExcel[]>([]);
 
   const profesionalesActivos = useMemo(
@@ -214,14 +216,19 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
     for (let r = 0; r < maxHeaderScan; r++) {
       const row = grid[r];
       const tempMap = new Map<number, number>();
-      const seenDays = new Set<number>();
+      let lastDay = 0;
 
       for (let c = 0; c < row.length; c++) {
         const cell = row[c].trim();
         if (/^0?[1-9]$|^[12][0-9]$|^3[01]$/.test(cell)) {
           const dayNum = Number(cell);
-          if (dayNum >= 1 && dayNum <= 31 && !seenDays.has(dayNum)) {
-            seenDays.add(dayNum);
+          // Reiniciar secuencia si antes del día 1 había un número suelto (ej. N°)
+          if (dayNum === 1 && tempMap.size > 0 && tempMap.size < 10) {
+            tempMap.clear();
+            lastDay = 0;
+          }
+          if (dayNum >= 1 && dayNum <= 31 && dayNum > lastDay) {
+            lastDay = dayNum;
             tempMap.set(c, dayNum);
           }
         }
@@ -421,9 +428,14 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
       return;
     }
 
+    const diasDetectadosNums = Array.from(bestDayColMap.values()).sort((a, b) => a - b);
+    const rangoDiasLabel =
+      diasDetectadosNums.length > 0
+        ? `días ${String(diasDetectadosNums[0]).padStart(2, '0')}–${String(diasDetectadosNums[diasDetectadosNums.length - 1]).padStart(2, '0')}`
+        : '';
     const totalTurnosDetectados = parsedFilas.reduce((acc, f) => acc + f.turnos.length, 0);
     setInfoResumen(
-      `Hoja "${sheetName}": ${parsedFilas.length} fila(s) detectadas con ${totalTurnosDetectados} turno(s) para ${MESES_NOMBRES[detectedMes - 1]} ${detectedAnio}.`
+      `Hoja "${sheetName}": ${parsedFilas.length} fila(s) detectadas (${rangoDiasLabel}) con ${totalTurnosDetectados} registro(s) para ${MESES_NOMBRES[detectedMes - 1]} ${detectedAnio}.`
     );
     setFilas(parsedFilas);
   };
@@ -537,6 +549,14 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
 
       for (const turno of fila.turnos) {
         if (turno.dia < 1 || turno.dia > diasEnMes) continue;
+        const esDomingo = getDayOfWeekIndex(targetAnio, targetMes, turno.dia) === 0;
+        if (
+          omitirTurnosDomingo &&
+          esDomingo &&
+          (turno.codigo === 'M' || turno.codigo === 'T' || turno.codigo === 'MT')
+        ) {
+          continue;
+        }
         const fecha = formatFechaIso(targetAnio, targetMes, turno.dia);
 
         acumulados = aplicarCodigoTurnoProfesional({
@@ -558,8 +578,20 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
       return;
     }
 
+    const importedProfIds = Array.from(
+      new Set(filas.filter((f) => f.incluir && f.profesionalId).map((f) => f.profesionalId))
+    );
+
     importarTurnosMasivo(acumulados, {
-      ...(reemplazarMes ? { reemplazarMes: { anio: targetAnio, mes: targetMes } } : {}),
+      ...(reemplazarMes
+        ? { reemplazarMes: { anio: targetAnio, mes: targetMes } }
+        : {
+            reemplazarProfesionalesMes: {
+              anio: targetAnio,
+              mes: targetMes,
+              profesionalIds: importedProfIds,
+            },
+          }),
       modo: 'por_profesional',
       consultoriosPorProf: consultoriosMap,
     });
@@ -745,7 +777,17 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
                       onChange={(e) => setReemplazarMes(e.target.checked)}
                       className="rounded border-slate-300 text-emerald-600"
                     />
-                    <span>Reemplazar todos los turnos previos de este mes</span>
+                    <span>Reemplazar todo el mes</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={omitirTurnosDomingo}
+                      onChange={(e) => setOmitirTurnosDomingo(e.target.checked)}
+                      className="rounded border-slate-300 text-emerald-600"
+                    />
+                    <span>Omitir M/T/MT en domingos</span>
                   </label>
                 </div>
 
@@ -889,8 +931,13 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
                             <td className="py-2.5 px-3">
                               <div className="flex flex-wrap gap-1">
                                 {fila.turnos.slice(0, 31).map((t, tIdx) => {
-                                  const badgeStyle =
-                                    t.codigo === 'M'
+                                  const esDomOmitido =
+                                    omitirTurnosDomingo &&
+                                    getDayOfWeekIndex(targetAnio, targetMes, t.dia) === 0 &&
+                                    (t.codigo === 'M' || t.codigo === 'T' || t.codigo === 'MT');
+                                  const badgeStyle = esDomOmitido
+                                    ? 'bg-rose-50 text-rose-400 border-rose-200 line-through opacity-60'
+                                    : t.codigo === 'M'
                                       ? 'bg-teal-100 text-teal-800 border-teal-300'
                                       : t.codigo === 'T'
                                         ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
@@ -902,7 +949,11 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
                                   return (
                                     <span
                                       key={`${t.dia}-${tIdx}`}
-                                      title={`Día ${t.dia}: ${t.codigoOriginal}`}
+                                      title={
+                                        esDomOmitido
+                                          ? `Domingo ${t.dia}: omitido automáticamente`
+                                          : `Día ${t.dia}: ${t.codigoOriginal}`
+                                      }
                                       className={`px-1.5 py-0.5 rounded border font-mono text-[10px] font-bold ${badgeStyle}`}
                                     >
                                       {String(t.dia).padStart(2, '0')}:{t.codigo}

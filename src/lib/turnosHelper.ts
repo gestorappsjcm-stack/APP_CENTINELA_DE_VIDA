@@ -273,6 +273,13 @@ export const normalizarTextoComparacion = (val?: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const simplificarFonetica = (val: string): string =>
+  val
+    .replace(/\b(DE|DEL|LA|LOS|LAS|Y)\b/g, ' ')
+    .replace(/([A-Z])\1+/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 export const matchProfesionalPorNombreODni = (
   nombrePdf: string,
   dniPdf: string | undefined,
@@ -300,7 +307,9 @@ export const matchProfesionalPorNombreODni = (
   );
   if (exactByName) return exactByName;
 
-  const targetTokens = target.split(' ').filter((t) => t.length >= 2);
+  const targetPhonetic = simplificarFonetica(target);
+  const targetJoined = targetPhonetic.replace(/\s+/g, '');
+  const targetTokens = targetPhonetic.split(' ').filter((t) => t.length >= 2);
   if (targetTokens.length === 0) return undefined;
 
   let bestMatch: Profesional | undefined;
@@ -309,19 +318,44 @@ export const matchProfesionalPorNombreODni = (
   for (const prof of profesionales) {
     const profNorm = normalizarTextoComparacion(prof.apellidos_nombres);
     if (!profNorm) continue;
-    if (profNorm.includes(target) || target.includes(profNorm)) {
+    const profPhonetic = simplificarFonetica(profNorm);
+    const profJoined = profPhonetic.replace(/\s+/g, '');
+
+    if (
+      profNorm.includes(target) ||
+      target.includes(profNorm) ||
+      profPhonetic === targetPhonetic ||
+      profJoined.includes(targetJoined) ||
+      targetJoined.includes(profJoined)
+    ) {
       return prof;
     }
-    const profTokens = profNorm.split(' ').filter((t) => t.length >= 2);
-    const common = targetTokens.filter((t) => profTokens.includes(t));
-    const score = common.length / Math.max(targetTokens.length, profTokens.length);
+
+    const profTokens = profPhonetic.split(' ').filter((t) => t.length >= 2);
+    const common = targetTokens.filter(
+      (t) =>
+        profTokens.includes(t) ||
+        profTokens.some((pt) => pt.length >= 4 && t.length >= 4 && (pt.startsWith(t) || t.startsWith(pt)))
+    );
+
+    const sameTwoSurnames =
+      targetTokens.length >= 2 &&
+      profTokens.length >= 2 &&
+      targetTokens[0] === profTokens[0] &&
+      targetTokens[1] === profTokens[1];
+
+    const denom = sameTwoSurnames
+      ? Math.min(targetTokens.length, profTokens.length)
+      : Math.max(targetTokens.length, profTokens.length);
+    const score = common.length / Math.max(1, denom);
+
     if (common.length >= 2 && score > bestScore) {
       bestScore = score;
       bestMatch = prof;
     }
   }
 
-  return bestScore >= 0.45 ? bestMatch : undefined;
+  return bestScore >= 0.6 || (bestMatch && bestScore >= 0.45) ? bestMatch : undefined;
 };
 
 export const matchConsultorioPorCodigoONombre = (

@@ -5,6 +5,7 @@ import {
   MESES_NOMBRES,
   aplicarCodigoTurnoProfesional,
   formatFechaIso,
+  getDayOfWeekIndex,
   getDaysInMonth,
   matchConsultorioPorCodigoONombre,
   matchProfesionalPorNombreODni,
@@ -136,6 +137,7 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
   const [targetAnio, setTargetAnio] = useState<number>(anioActual);
   const [targetMes, setTargetMes] = useState<number>(mesActual);
   const [reemplazarMes, setReemplazarMes] = useState<boolean>(false);
+  const [omitirTurnosDomingo, setOmitirTurnosDomingo] = useState<boolean>(true);
   const [filas, setFilas] = useState<FilaRevisionPdf[]>([]);
 
   const profesionalesActivos = useMemo(
@@ -318,6 +320,14 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
         if (turno.dia < 1 || turno.dia > diasEnMes) continue;
         const codigo = mapTipoTurnoACodigo(turno.tipoTurno, turno.codigoOriginal);
         if (!codigo) continue;
+        const esDomingo = getDayOfWeekIndex(targetAnio, targetMes, turno.dia) === 0;
+        if (
+          omitirTurnosDomingo &&
+          esDomingo &&
+          (codigo === 'M' || codigo === 'T' || codigo === 'MT')
+        ) {
+          continue;
+        }
 
         const consDia = turno.consultorioCodigo
           ? matchConsultorioPorCodigoONombre(turno.consultorioCodigo, prof, consultorios)
@@ -344,8 +354,20 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
       return;
     }
 
+    const importedProfIds = Array.from(
+      new Set(filas.filter((f) => f.incluir && f.profesionalId).map((f) => f.profesionalId))
+    );
+
     importarTurnosMasivo(acumulados, {
-      ...(reemplazarMes ? { reemplazarMes: { anio: targetAnio, mes: targetMes } } : {}),
+      ...(reemplazarMes
+        ? { reemplazarMes: { anio: targetAnio, mes: targetMes } }
+        : {
+            reemplazarProfesionalesMes: {
+              anio: targetAnio,
+              mes: targetMes,
+              profesionalIds: importedProfIds,
+            },
+          }),
       modo: 'por_profesional',
       consultoriosPorProf: consultoriosMap,
     });
@@ -506,7 +528,17 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
                       onChange={(e) => setReemplazarMes(e.target.checked)}
                       className="rounded border-slate-300 text-indigo-600"
                     />
-                    <span>Reemplazar todos los turnos previos de este mes</span>
+                    <span>Reemplazar todo el mes</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={omitirTurnosDomingo}
+                      onChange={(e) => setOmitirTurnosDomingo(e.target.checked)}
+                      className="rounded border-slate-300 text-indigo-600"
+                    />
+                    <span>Omitir M/T/MT en domingos</span>
                   </label>
                 </div>
 
@@ -649,8 +681,13 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
                               <div className="flex flex-wrap gap-1">
                                 {fila.turnos.slice(0, 31).map((t, tIdx) => {
                                   const cod = mapTipoTurnoACodigo(t.tipoTurno, t.codigoOriginal);
-                                  const badgeStyle =
-                                    cod === 'M'
+                                  const esDomOmitido =
+                                    omitirTurnosDomingo &&
+                                    getDayOfWeekIndex(targetAnio, targetMes, t.dia) === 0 &&
+                                    (cod === 'M' || cod === 'T' || cod === 'MT');
+                                  const badgeStyle = esDomOmitido
+                                    ? 'bg-rose-50 text-rose-400 border-rose-200 line-through opacity-60'
+                                    : cod === 'M'
                                       ? 'bg-teal-100 text-teal-800 border-teal-300'
                                       : cod === 'T'
                                         ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
@@ -660,7 +697,11 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
                                   return (
                                     <span
                                       key={`${t.dia}-${tIdx}`}
-                                      title={`Día ${t.dia}: ${t.tipoTurno} (${t.codigoOriginal})`}
+                                      title={
+                                        esDomOmitido
+                                          ? `Domingo ${t.dia}: omitido automáticamente`
+                                          : `Día ${t.dia}: ${t.tipoTurno} (${t.codigoOriginal})`
+                                      }
                                       className={`px-1.5 py-0.5 rounded border font-mono text-[10px] font-bold ${badgeStyle}`}
                                     >
                                       {String(t.dia).padStart(2, '0')}:{cod || t.codigoOriginal}
