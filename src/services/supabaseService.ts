@@ -1,5 +1,5 @@
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
-import { AsignacionTurnoDia, Paciente, Cita, Triaje, AtencionClinica, Profesional, Usuario, FUA } from '../types';
+import { AsignacionTurnoDia, Consultorio, Paciente, Cita, Triaje, AtencionClinica, Profesional, Usuario, FUA } from '../types';
 import { parseMedicamentosList } from '../lib/medicamentosHelper';
 import {
   calcularEdadDesdeFecha,
@@ -879,6 +879,101 @@ export const supabaseService = {
       console.warn('Error insertando triaje en Supabase:', err);
       return false;
     }
+  },
+
+  // 5.1 CONSULTORIOS: cv_consultorios
+  async getConsultorios(): Promise<Consultorio[] | null> {
+    const client = getSupabase();
+    if (!client) return null;
+    try {
+      const { data, error } = await client
+        .from('cv_consultorios')
+        .select('*')
+        .order('codigo', { ascending: true });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const mapTipo = (raw?: string): Consultorio['servicio_tipo'] => {
+          const t = String(raw || '').trim().toUpperCase();
+          if (t === 'MEDICO' || t === 'MEDICINA') return 'MEDICINA';
+          if (t === 'PSIQUIATRIA') return 'PSIQUIATRIA';
+          if (t === 'TERAPIA_OCUPACIONAL') return 'TERAPIA_OCUPACIONAL';
+          if (t === 'TERAPIA_LENGUAJE') return 'TERAPIA_LENGUAJE';
+          if (t === 'TRABAJO_SOCIAL') return 'TRABAJO_SOCIAL';
+          if (t === 'TRIAJE' || t === 'ENFERMERIA') return 'TRIAJE';
+          if (t === 'SOPORTE') return 'SOPORTE';
+          return 'PSICOLOGIA';
+        };
+        const mapColor = (tipo: Consultorio['servicio_tipo']): string => {
+          switch (tipo) {
+            case 'TRIAJE':
+              return 'emerald';
+            case 'PSIQUIATRIA':
+              return 'purple';
+            case 'MEDICINA':
+              return 'blue';
+            case 'TERAPIA_OCUPACIONAL':
+              return 'amber';
+            case 'TERAPIA_LENGUAJE':
+              return 'indigo';
+            case 'TRABAJO_SOCIAL':
+              return 'rose';
+            default:
+              return 'teal';
+          }
+        };
+        return data.map((c: any) => {
+          const tipo = mapTipo(c.especialidad || c.servicio_tipo);
+          const pisoRaw = c.piso != null ? String(c.piso).trim() : '1';
+          const pisoLabel = /^\d+$/.test(pisoRaw) ? `${pisoRaw}° Piso` : pisoRaw;
+          return {
+            id: String(c.id),
+            codigo: String(c.codigo || '').trim(),
+            nombre: String(c.nombre || '').trim(),
+            servicio_tipo: tipo,
+            piso: pisoLabel,
+            activo: c.activo !== false,
+            profesional_id: c.profesional_id ? String(c.profesional_id) : undefined,
+            profesional_nombre: c.profesional_nombre ? String(c.profesional_nombre) : undefined,
+            profesional_tarde_id: c.profesional_tarde_id ? String(c.profesional_tarde_id) : undefined,
+            profesional_tarde_nombre: c.profesional_tarde_nombre ? String(c.profesional_tarde_nombre) : undefined,
+            color: mapColor(tipo),
+          };
+        });
+      }
+    } catch (err) {
+      console.warn('Error al obtener consultorios de Supabase:', err);
+    }
+    return null;
+  },
+
+  async updateConsultorio(
+    id: string,
+    data: { profesional_id?: string | null; profesional_tarde_id?: string | null }
+  ): Promise<boolean> {
+    const client = getSupabase();
+    if (!client) return false;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (!isUuid) return false;
+    try {
+      const payload: Record<string, any> = {};
+      if (data.profesional_id !== undefined) payload.profesional_id = data.profesional_id || null;
+      if (data.profesional_tarde_id !== undefined) payload.profesional_tarde_id = data.profesional_tarde_id || null;
+      if (Object.keys(payload).length === 0) return true;
+
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (Object.keys(payload).length === 0) return true;
+        const { error } = await client.from('cv_consultorios').update(payload).eq('id', id);
+        if (!error) return true;
+        const missingCol = extractMissingSchemaColumn(error);
+        if (missingCol && missingCol in payload) {
+          delete payload[missingCol];
+          continue;
+        }
+        break;
+      }
+    } catch (err) {
+      console.warn('Error actualizando cv_consultorios en Supabase:', err);
+    }
+    return false;
   },
 
   // 6. PROFESIONALES: cv_profesionales

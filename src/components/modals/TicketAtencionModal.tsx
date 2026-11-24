@@ -29,16 +29,33 @@ export const TicketAtencionModal: React.FC<TicketAtencionModalProps> = ({
   onClose,
   isRecienCreada = false,
 }) => {
-  const { pacientes, profesionales, consultorios } = useApp();
+  const { pacientes, profesionales, consultorios, turnosProgramados } = useApp();
   const [copiado, setCopiado] = React.useState(false);
 
   const paciente = pacientes.find((p) => String(p.id) === String(cita.paciente_id));
   const profesional = profesionales.find((pr) => String(pr.id) === String(cita.profesional_id));
+  const fechaNormCita = cita.fecha_cita ? cita.fecha_cita.split('T')[0].split(' ')[0] : '';
+  const turnoDiaCita =
+    profesional && fechaNormCita
+      ? turnosProgramados.find(
+          (t) =>
+            t.fecha === fechaNormCita &&
+            String(t.profesional_id) === String(profesional.id) &&
+            (t.turno === 'MAÑANA' || t.turno === 'TARDE') &&
+            t.consultorio_id
+        )
+      : undefined;
+
   const consultorio = consultorios.find(
     (c) =>
-      String(c.id) === String(cita.consultorio_id) ||
+      (cita.consultorio_id &&
+        (String(c.id) === String(cita.consultorio_id) || String(c.codigo) === String(cita.consultorio_id))) ||
+      (turnoDiaCita?.consultorio_id &&
+        (String(c.id) === String(turnoDiaCita.consultorio_id) ||
+          String(c.codigo) === String(turnoDiaCita.consultorio_id))) ||
       (profesional?.consultorioAsignado &&
         (String(c.id) === String(profesional.consultorioAsignado) ||
+          String(c.codigo) === String(profesional.consultorioAsignado) ||
           c.nombre.toLowerCase().includes(profesional.consultorioAsignado.toLowerCase())))
   );
 

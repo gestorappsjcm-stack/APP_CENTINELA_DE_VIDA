@@ -632,6 +632,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         supaDiagnosticos,
         supaProcedimientos,
         supaTurnosProgramados,
+        supaConsultorios,
       ] = await Promise.all([
         supabaseService.getDashboardResumen(),
         supabaseService.getPacientes(),
@@ -644,7 +645,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         supabaseService.getDiagnosticosPsico(),
         supabaseService.getProcedimientos(),
         supabaseService.getTurnosProgramados(),
+        supabaseService.getConsultorios(),
       ]);
+
+      const legacyCodeByMockId: Record<string, string> = {
+        'cons-psico-1': 'C-PSI-01',
+        'cons-psico-2': 'C-PSI-02',
+        'cons-psico-3': 'C-PSI-03',
+        'cons-psico-4': 'C-PSI-04',
+        'cons-psico-5': 'C-PSI-05',
+        'cons-psico-6': 'C-PSI-06',
+        'cons-psico-7': 'C-PSI-07',
+        'cons-psiq': 'C-PSQ-01',
+        'cons-med': 'C-MED-01',
+        'cons-ter-ocup': 'C-TO-01',
+        'cons-ter-leng': 'C-TL-01',
+        'cons-trab-soc': 'C-TS-01',
+        'PSICO-01': 'C-PSI-01',
+        'PSICO-02': 'C-PSI-02',
+        'PSICO-03': 'C-PSI-03',
+        'PSICO-04': 'C-PSI-04',
+        'PSICO-05': 'C-PSI-05',
+        'PSICO-06': 'C-PSI-06',
+        'PSICO-07': 'C-PSI-07',
+        'PSIQ-01': 'C-PSQ-01',
+        'MED-01': 'C-MED-01',
+        'TER-OCUP': 'C-TO-01',
+        'TER-LENG': 'C-TL-01',
+        'TRAB-SOC': 'C-TS-01',
+      };
+
+      const resolvedConsultorios =
+        Array.isArray(supaConsultorios) && supaConsultorios.length > 0
+          ? supaConsultorios.some((c) => c.servicio_tipo === 'TRIAJE')
+            ? supaConsultorios
+            : [INITIAL_CONSULTORIOS[0], ...supaConsultorios]
+          : null;
+
+      if (resolvedConsultorios) {
+        setConsultorios(resolvedConsultorios);
+      }
+
+      const resolveConsId = (rawId?: string): string | undefined => {
+        if (!rawId) return rawId;
+        if (!resolvedConsultorios) return rawId;
+        const direct = resolvedConsultorios.find((c) => c.id === rawId || c.codigo === rawId);
+        if (direct) return direct.id;
+        const mappedCode = legacyCodeByMockId[rawId];
+        if (mappedCode) {
+          const byCode = resolvedConsultorios.find((c) => c.codigo === mappedCode);
+          if (byCode) return byCode.id;
+        }
+        return rawId;
+      };
 
       if (liveStats) {
         setSupabaseLiveStats(liveStats);
@@ -661,7 +714,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ? {
                 ...c,
                 profesional_id: triajeVinculado.profesional_id,
-                consultorio_id: c.consultorio_id || triajeVinculado.consultorio_id,
+                consultorio_id: resolveConsId(c.consultorio_id || triajeVinculado.consultorio_id),
               }
             : c;
         });
@@ -674,7 +727,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTriajes(supaTriajes);
       }
       if (Array.isArray(supaProfesionales)) {
-        setProfesionales(supaProfesionales);
+        setProfesionales(
+          supaProfesionales.map((p) => ({
+            ...p,
+            consultorioAsignado: resolveConsId(p.consultorioAsignado),
+          }))
+        );
       }
       if (Array.isArray(supaUsuarios)) {
         setUsuarios(supaUsuarios);
@@ -689,13 +747,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCatalogoProcedimientos(supaProcedimientos);
       }
       if (supaTurnosProgramados) {
-        if (supaTurnosProgramados.turnos.length > 0 || turnosProgramados.length === 0) {
-          setTurnosProgramados(supaTurnosProgramados.turnos);
+        const turnosNormalizados = supaTurnosProgramados.turnos.map((t) => ({
+          ...t,
+          consultorio_id: resolveConsId(t.consultorio_id) || t.consultorio_id,
+        }));
+        if (turnosNormalizados.length > 0 || turnosProgramados.length === 0) {
+          setTurnosProgramados(turnosNormalizados);
         }
         if (supaTurnosProgramados.consultoriosPorProf) {
+          const normalizedMap: Record<string, string> = {};
+          for (const [k, v] of Object.entries(supaTurnosProgramados.consultoriosPorProf)) {
+            normalizedMap[k] = resolveConsId(v) || v;
+          }
           setConsultoriosDefaultProf((prev) => ({
             ...prev,
-            ...supaTurnosProgramados.consultoriosPorProf,
+            ...normalizedMap,
           }));
         }
         setTurnosSyncStatus('saved');
@@ -1335,6 +1401,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           c.profesional_tarde_nombre !== nextTardeNombre
         ) {
           changed = true;
+          if (isSupabaseConfigured() && (c.profesional_id !== nextMananaId || c.profesional_tarde_id !== nextTardeId)) {
+            supabaseService
+              .updateConsultorio(c.id, {
+                profesional_id: nextMananaId || null,
+                profesional_tarde_id: nextTardeId || null,
+              })
+              .catch(() => {});
+          }
           return {
             ...c,
             profesional_id: nextMananaId,
