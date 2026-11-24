@@ -120,7 +120,11 @@ interface AppContextType {
   ) => void;
   importarTurnosMasivo: (
     nuevosTurnos: AsignacionTurnoDia[],
-    opciones?: { reemplazarMes?: { anio: number; mes: number } }
+    opciones?: {
+      reemplazarMes?: { anio: number; mes: number };
+      modo?: 'por_profesional' | 'por_consultorio';
+      consultoriosPorProf?: Record<string, string>;
+    }
   ) => void;
   limpiarTurnosMes: (anio: number, mes: number) => void;
 
@@ -656,6 +660,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'cons-psico-5': 'C-PSI-05',
         'cons-psico-6': 'C-PSI-06',
         'cons-psico-7': 'C-PSI-07',
+        'cons-psico-8': 'C-PSI-08',
         'cons-psiq': 'C-PSQ-01',
         'cons-med': 'C-MED-01',
         'cons-ter-ocup': 'C-TO-01',
@@ -668,6 +673,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'PSICO-05': 'C-PSI-05',
         'PSICO-06': 'C-PSI-06',
         'PSICO-07': 'C-PSI-07',
+        'PSICO-08': 'C-PSI-08',
         'PSIQ-01': 'C-PSQ-01',
         'MED-01': 'C-MED-01',
         'TER-OCUP': 'C-TO-01',
@@ -675,12 +681,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'TRAB-SOC': 'C-TS-01',
       };
 
-      const resolvedConsultorios =
-        Array.isArray(supaConsultorios) && supaConsultorios.length > 0
-          ? supaConsultorios.some((c) => c.servicio_tipo === 'TRIAJE')
-            ? supaConsultorios
-            : [INITIAL_CONSULTORIOS[0], ...supaConsultorios]
-          : null;
+      let resolvedConsultorios: Consultorio[] | null = null;
+      if (Array.isArray(supaConsultorios) && supaConsultorios.length > 0) {
+        resolvedConsultorios = supaConsultorios.some((c) => c.servicio_tipo === 'TRIAJE')
+          ? [...supaConsultorios]
+          : [INITIAL_CONSULTORIOS[0], ...supaConsultorios];
+
+        // Asegurar 8vo consultorio de Psicología (Adicciones) para cubrir a los 8 psicólogos
+        const hasPsico8 = resolvedConsultorios.some(
+          (c) =>
+            c.codigo === 'C-PSI-08' ||
+            c.codigo === 'PSICO-08' ||
+            (c.servicio_tipo === 'PSICOLOGIA' && resolvedConsultorios!.filter((x) => x.servicio_tipo === 'PSICOLOGIA').length >= 8)
+        );
+        if (!hasPsico8) {
+          const createdPsico8 = await supabaseService.ensureConsultorio({
+            codigo: 'C-PSI-08',
+            nombre: 'Consultorio Psicología 8 - Adicciones',
+            especialidad: 'PSICOLOGIA',
+            piso: '2',
+          });
+          const fallbackPsico8 = INITIAL_CONSULTORIOS.find((c) => c.codigo === 'C-PSI-08');
+          if (createdPsico8) {
+            resolvedConsultorios.push(createdPsico8);
+          } else if (fallbackPsico8) {
+            resolvedConsultorios.push(fallbackPsico8);
+          }
+        }
+      }
 
       if (resolvedConsultorios) {
         setConsultorios(resolvedConsultorios);
@@ -1549,14 +1577,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const importarTurnosMasivo = (
     nuevosTurnos: AsignacionTurnoDia[],
-    opciones?: { reemplazarMes?: { anio: number; mes: number } }
+    opciones?: {
+      reemplazarMes?: { anio: number; mes: number };
+      modo?: 'por_profesional' | 'por_consultorio';
+      consultoriosPorProf?: Record<string, string>;
+    }
   ) => {
+    let nextConsultoriosMap = consultoriosDefaultProf;
+    if (opciones?.consultoriosPorProf && Object.keys(opciones.consultoriosPorProf).length > 0) {
+      nextConsultoriosMap = {
+        ...consultoriosDefaultProf,
+        ...opciones.consultoriosPorProf,
+      };
+      setConsultoriosDefaultProf(nextConsultoriosMap);
+    }
+
     setTurnosProgramados((prev) => {
       let base = prev;
       if (opciones?.reemplazarMes) {
         const prefix = `${opciones.reemplazarMes.anio}-${String(opciones.reemplazarMes.mes).padStart(2, '0')}-`;
         base = base.filter((t) => !t.fecha.startsWith(prefix));
-      } else {
+      } else if (opciones?.modo === 'por_consultorio') {
         const incomingKeys = new Set(
           nuevosTurnos.map((t) =>
             t.turno === 'AUSENCIA'
@@ -1578,9 +1619,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           return true;
         });
+      } else {
+        // Por profesional (Excel/PDF): reemplazar únicamente los turnos previos del mismo profesional en esas fechas
+        const incomingProfDays = new Set(
+          nuevosTurnos.map((t) => `${t.fecha}__${t.profesional_id}`)
+        );
+        base = base.filter((t) => !incomingProfDays.has(`${t.fecha}__${t.profesional_id}`));
       }
       const next = [...base, ...nuevosTurnos];
-      persistirTurnos(next);
+      persistirTurnos(next, nextConsultoriosMap);
       return next;
     });
   };

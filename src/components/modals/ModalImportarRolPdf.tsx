@@ -120,6 +120,7 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
     isDeveloperMode,
     profesionales,
     consultorios,
+    consultoriosDefaultProf,
     importarTurnosMasivo,
   } = useApp();
 
@@ -257,6 +258,7 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
         );
       }
 
+      const usadosPsicoIds = new Set<string>();
       const mappedFilas: FilaRevisionPdf[] = detectados.map((item, idx) => {
         const profMatch = matchProfesionalPorNombreODni(
           item.nombrePdf,
@@ -264,10 +266,16 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
           item.profesionalIdSugerido,
           profesionalesActivos
         );
+        const prefConsId = profMatch ? consultoriosDefaultProf[profMatch.id] : undefined;
+        const profConDefault =
+          profMatch && prefConsId
+            ? { ...profMatch, consultorioAsignado: prefConsId }
+            : profMatch;
         const consMatch = matchConsultorioPorCodigoONombre(
           item.consultorioCodigoSugerido,
-          profMatch,
-          consultorios
+          profConDefault,
+          consultorios,
+          usadosPsicoIds
         );
 
         const turnosLimpios = (Array.isArray(item.turnos) ? item.turnos : [])
@@ -297,10 +305,14 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
     const diasEnMes = getDaysInMonth(targetAnio, targetMes);
     let acumulados: AsignacionTurnoDia[] = [];
     let turnosAplicadosCount = 0;
+    const consultoriosMap: Record<string, string> = {};
 
     for (const fila of filas) {
       if (!fila.incluir || !fila.profesionalId) continue;
       const prof = profesionalesActivos.find((p) => p.id === fila.profesionalId);
+      if (fila.consultorioId) {
+        consultoriosMap[fila.profesionalId] = fila.consultorioId;
+      }
 
       for (const turno of fila.turnos) {
         if (turno.dia < 1 || turno.dia > diasEnMes) continue;
@@ -332,10 +344,11 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
       return;
     }
 
-    importarTurnosMasivo(
-      acumulados,
-      reemplazarMes ? { reemplazarMes: { anio: targetAnio, mes: targetMes } } : undefined
-    );
+    importarTurnosMasivo(acumulados, {
+      ...(reemplazarMes ? { reemplazarMes: { anio: targetAnio, mes: targetMes } } : {}),
+      modo: 'por_profesional',
+      consultoriosPorProf: consultoriosMap,
+    });
 
     if (onApplied) {
       onApplied(targetAnio, targetMes, turnosAplicadosCount);
@@ -575,6 +588,14 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
                                 onChange={(e) => {
                                   const nextProfId = e.target.value;
                                   const prof = profesionalesActivos.find((p) => p.id === nextProfId);
+                                  const prefConsId = prof ? consultoriosDefaultProf[prof.id] : undefined;
+                                  const matchedCons = prof
+                                    ? matchConsultorioPorCodigoONombre(
+                                        undefined,
+                                        prefConsId ? { ...prof, consultorioAsignado: prefConsId } : prof,
+                                        consultorios
+                                      )
+                                    : undefined;
                                   setFilas((prev) =>
                                     prev.map((item) =>
                                       item.key === fila.key
@@ -583,7 +604,7 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
                                             profesionalId: nextProfId,
                                             incluir: Boolean(nextProfId),
                                             consultorioId:
-                                              prof?.consultorioAsignado || item.consultorioId,
+                                              matchedCons?.id || item.consultorioId,
                                           }
                                         : item
                                     )

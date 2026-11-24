@@ -10,6 +10,7 @@ import {
   getHorasMesProfesional,
   getSemanasDelMes,
   getTodayIso,
+  matchConsultorioPorCodigoONombre,
 } from '../../lib/turnosHelper';
 import { ModalImportarRolPdf } from '../modals/ModalImportarRolPdf';
 import { ModalImportarRolExcel } from '../modals/ModalImportarRolExcel';
@@ -320,7 +321,7 @@ export const ProgramacionTurnosView: React.FC = () => {
       return;
     }
 
-    importarTurnosMasivo(nuevos);
+    importarTurnosMasivo(nuevos, { modo: 'por_consultorio' });
     notify(`Patrón de ${semanaActual.label} replicado en ${MESES_NOMBRES[mes - 1]} ${anio} (${nuevos.length} turnos).`);
   };
 
@@ -337,13 +338,8 @@ export const ProgramacionTurnosView: React.FC = () => {
       if (delDia?.consultorio_id) return delDia.consultorio_id;
     }
     const prof = profesionalesActivos.find((p) => p.id === profId);
-    if (prof?.consultorioAsignado) {
-      const found = consultorios.find(
-        (c) => c.id === prof.consultorioAsignado || c.codigo === prof.consultorioAsignado
-      );
-      if (found) return found.id;
-    }
-    return consultorios[0]?.id || '';
+    const sugerido = matchConsultorioPorCodigoONombre(undefined, prof, consultorios);
+    return sugerido?.id || consultorios[0]?.id || '';
   };
 
   const TURNOS_SQL_FIX = `-- Ejecutar en Supabase -> SQL Editor para ampliar cv_configuracion y/o habilitar cv_turnos_programados

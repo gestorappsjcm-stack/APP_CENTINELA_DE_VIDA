@@ -976,6 +976,58 @@ export const supabaseService = {
     return false;
   },
 
+  async ensureConsultorio(data: {
+    codigo: string;
+    nombre: string;
+    especialidad: string;
+    piso?: string;
+  }): Promise<Consultorio | null> {
+    const client = getSupabase();
+    if (!client) return null;
+    try {
+      const { data: existing } = await client
+        .from('cv_consultorios')
+        .select('*')
+        .eq('codigo', data.codigo)
+        .maybeSingle();
+
+      const rowToMap = existing
+        ? existing
+        : (
+            await client
+              .from('cv_consultorios')
+              .insert([
+                {
+                  codigo: data.codigo,
+                  nombre: data.nombre,
+                  especialidad: data.especialidad,
+                  piso: data.piso || '2',
+                  activo: true,
+                },
+              ])
+              .select('*')
+              .maybeSingle()
+          ).data;
+
+      if (rowToMap && rowToMap.id) {
+        return {
+          id: String(rowToMap.id),
+          codigo: String(rowToMap.codigo || data.codigo),
+          nombre: String(rowToMap.nombre || data.nombre),
+          servicio_tipo: 'PSICOLOGIA',
+          piso: /^\d+$/.test(String(rowToMap.piso || data.piso || '2'))
+            ? `${rowToMap.piso || data.piso || '2'}° Piso`
+            : String(rowToMap.piso || '2do Piso'),
+          activo: rowToMap.activo !== false,
+          color: 'teal',
+        };
+      }
+    } catch (err) {
+      console.warn('No se pudo asegurar consultorio en Supabase:', err);
+    }
+    return null;
+  },
+
   // 6. PROFESIONALES: cv_profesionales
   async getProfesionales(): Promise<Profesional[] | null> {
     const client = getSupabase();
@@ -1737,7 +1789,7 @@ export const supabaseService = {
         const id =
           turno === 'AUSENCIA'
             ? `aus__${fecha}__${profesional_id}`
-            : `${fecha}__${consultorio_id}__${turno}`;
+            : `${fecha}__${consultorio_id}__${turno}__${profesional_id}`;
 
         turnos.push({
           id,

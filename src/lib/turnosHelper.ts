@@ -156,8 +156,8 @@ export const aplicarCodigoTurnoProfesional = (params: {
 }): AsignacionTurnoDia[] => {
   const { turnos, fecha, profesionalId, profesionalNombre, consultorioId, codigo } = params;
 
-  // Primero eliminar todas las asignaciones previas de ese profesional en esa fecha
-  let next = turnos.filter(
+  // Eliminar únicamente las asignaciones previas de ese mismo profesional en esa fecha (sin borrar turnos de otros profesionales)
+  const next = turnos.filter(
     (item) => !(item.fecha === fecha && item.profesional_id === profesionalId)
   );
 
@@ -185,24 +185,26 @@ export const aplicarCodigoTurnoProfesional = (params: {
   }
 
   if (codigo === 'M' || codigo === 'MT') {
-    next = asignarSlotConsultorioFecha({
-      turnos: next,
+    next.push({
+      id: `${fecha}__${consultorioId}__MAÑANA__${profesionalId}`,
       fecha,
-      consultorioId,
+      consultorio_id: consultorioId,
       turno: 'MAÑANA',
-      profesionalId,
-      profesionalNombre,
+      profesional_id: profesionalId,
+      profesional_nombre: profesionalNombre,
+      codigo_rol: codigo,
     });
   }
 
   if (codigo === 'T' || codigo === 'MT') {
-    next = asignarSlotConsultorioFecha({
-      turnos: next,
+    next.push({
+      id: `${fecha}__${consultorioId}__TARDE__${profesionalId}`,
       fecha,
-      consultorioId,
+      consultorio_id: consultorioId,
       turno: 'TARDE',
-      profesionalId,
-      profesionalNombre,
+      profesional_id: profesionalId,
+      profesional_nombre: profesionalNombre,
+      codigo_rol: codigo,
     });
   }
 
@@ -325,7 +327,8 @@ export const matchProfesionalPorNombreODni = (
 export const matchConsultorioPorCodigoONombre = (
   codigoPdf: string | undefined,
   profesional: Profesional | undefined,
-  consultorios: Consultorio[]
+  consultorios: Consultorio[],
+  usadosPsicoIds?: Set<string>
 ): Consultorio | undefined => {
   if (codigoPdf) {
     const norm = normalizarTextoComparacion(codigoPdf);
@@ -342,7 +345,43 @@ export const matchConsultorioPorCodigoONombre = (
     const byProf = consultorios.find(
       (c) => c.id === profesional.consultorioAsignado || c.codigo === profesional.consultorioAsignado
     );
-    if (byProf) return byProf;
+    if (byProf) {
+      if (byProf.servicio_tipo === 'PSICOLOGIA' && usadosPsicoIds) {
+        usadosPsicoIds.add(byProf.id);
+      }
+      return byProf;
+    }
+  }
+
+  if (profesional?.profesion) {
+    const profTipo = profesional.profesion.toUpperCase();
+    if (profTipo === 'MEDICO') {
+      const c = consultorios.find((x) => x.servicio_tipo === 'MEDICINA');
+      if (c) return c;
+    } else if (profTipo === 'PSIQUIATRA') {
+      const c = consultorios.find((x) => x.servicio_tipo === 'PSIQUIATRIA');
+      if (c) return c;
+    } else if (profTipo === 'TRABAJADOR_SOCIAL') {
+      const c = consultorios.find((x) => x.servicio_tipo === 'TRABAJO_SOCIAL');
+      if (c) return c;
+    } else if (profTipo === 'TERAPEUTA_OCUPACIONAL') {
+      const c = consultorios.find((x) => x.servicio_tipo === 'TERAPIA_OCUPACIONAL');
+      if (c) return c;
+    } else if (profTipo === 'TERAPEUTA_LENGUAJE') {
+      const c = consultorios.find((x) => x.servicio_tipo === 'TERAPIA_LENGUAJE');
+      if (c) return c;
+    } else if (profTipo === 'PSICOLOGO') {
+      const psicos = consultorios.filter((x) => x.servicio_tipo === 'PSICOLOGIA');
+      if (psicos.length > 0) {
+        const libre = usadosPsicoIds ? psicos.find((x) => !usadosPsicoIds.has(x.id)) : undefined;
+        const elegido = libre || psicos[0];
+        if (usadosPsicoIds) usadosPsicoIds.add(elegido.id);
+        return elegido;
+      }
+    } else if (profTipo === 'ENFERMERO' || profTipo === 'ADMISION_SOPORTE') {
+      const c = consultorios.find((x) => x.servicio_tipo === 'TRIAJE' || x.servicio_tipo === 'SOPORTE');
+      if (c) return c;
+    }
   }
 
   return consultorios[0];

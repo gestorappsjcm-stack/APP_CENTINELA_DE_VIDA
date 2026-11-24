@@ -169,6 +169,15 @@ export const INITIAL_CONSULTORIOS: Consultorio[] = [
     color: 'teal',
   },
   {
+    id: 'cons-psico-8',
+    codigo: 'C-PSI-08',
+    nombre: 'Consultorio Psicología 8 - Adicciones',
+    servicio_tipo: 'PSICOLOGIA',
+    piso: '2do Piso',
+    activo: true,
+    color: 'teal',
+  },
+  {
     id: 'cons-ter-ocup',
     codigo: 'TER-OCUP',
     nombre: 'Consultorio / Taller de Terapia Ocupacional',

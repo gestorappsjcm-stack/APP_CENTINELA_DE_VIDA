@@ -132,6 +132,7 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
     isDeveloperMode,
     profesionales,
     consultorios,
+    consultoriosDefaultProf,
     importarTurnosMasivo,
   } = useApp();
 
@@ -354,6 +355,7 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
     }
 
     // 5. Leer filas de profesionales y sus turnos
+    const usadosPsicoIds = new Set<string>();
     const parsedFilas: FilaRevisionExcel[] = [];
     for (let r = headerRowIdx + 1; r < grid.length; r++) {
       const row = grid[r] || [];
@@ -389,7 +391,17 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
         undefined,
         profesionalesActivos
       );
-      const consMatch = matchConsultorioPorCodigoONombre(consRaw, profMatch, consultorios);
+      const prefConsId = profMatch ? consultoriosDefaultProf[profMatch.id] : undefined;
+      const profConDefault =
+        profMatch && prefConsId
+          ? { ...profMatch, consultorioAsignado: prefConsId }
+          : profMatch;
+      const consMatch = matchConsultorioPorCodigoONombre(
+        consRaw,
+        profConDefault,
+        consultorios,
+        usadosPsicoIds
+      );
 
       parsedFilas.push({
         key: `xlsx-${r}-${nombreRaw}`,
@@ -513,14 +525,18 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
     const diasEnMes = getDaysInMonth(targetAnio, targetMes);
     let acumulados: AsignacionTurnoDia[] = [];
     let turnosAplicadosCount = 0;
+    const consultoriosMap: Record<string, string> = {};
 
     for (const fila of filas) {
       if (!fila.incluir || !fila.profesionalId) continue;
       const prof = profesionalesActivos.find((p) => p.id === fila.profesionalId);
+      const targetConsultorioId = fila.consultorioId || consultorios[0]?.id || '';
+      if (targetConsultorioId) {
+        consultoriosMap[fila.profesionalId] = targetConsultorioId;
+      }
 
       for (const turno of fila.turnos) {
         if (turno.dia < 1 || turno.dia > diasEnMes) continue;
-        const targetConsultorioId = fila.consultorioId || consultorios[0]?.id || '';
         const fecha = formatFechaIso(targetAnio, targetMes, turno.dia);
 
         acumulados = aplicarCodigoTurnoProfesional({
@@ -542,10 +558,11 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
       return;
     }
 
-    importarTurnosMasivo(
-      acumulados,
-      reemplazarMes ? { reemplazarMes: { anio: targetAnio, mes: targetMes } } : undefined
-    );
+    importarTurnosMasivo(acumulados, {
+      ...(reemplazarMes ? { reemplazarMes: { anio: targetAnio, mes: targetMes } } : {}),
+      modo: 'por_profesional',
+      consultoriosPorProf: consultoriosMap,
+    });
 
     if (onApplied) {
       onApplied(targetAnio, targetMes, turnosAplicadosCount);
@@ -812,6 +829,14 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
                                   const prof = profesionalesActivos.find(
                                     (p) => p.id === nextProfId
                                   );
+                                  const prefConsId = prof ? consultoriosDefaultProf[prof.id] : undefined;
+                                  const matchedCons = prof
+                                    ? matchConsultorioPorCodigoONombre(
+                                        undefined,
+                                        prefConsId ? { ...prof, consultorioAsignado: prefConsId } : prof,
+                                        consultorios
+                                      )
+                                    : undefined;
                                   setFilas((prev) =>
                                     prev.map((item) =>
                                       item.key === fila.key
@@ -820,7 +845,7 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
                                             profesionalId: nextProfId,
                                             incluir: Boolean(nextProfId),
                                             consultorioId:
-                                              prof?.consultorioAsignado || item.consultorioId,
+                                              matchedCons?.id || item.consultorioId,
                                           }
                                         : item
                                     )
