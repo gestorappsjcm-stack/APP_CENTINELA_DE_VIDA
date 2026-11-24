@@ -101,6 +101,11 @@ interface AppContextType {
   updateConsultorio: (id: string, data: Partial<Consultorio>) => void;
   asignarProfesionalAConsultorio: (consultorioId: string, turno: 'MAÑANA' | 'TARDE', profesionalId: string) => void;
   turnosProgramados: AsignacionTurnoDia[];
+  consultoriosDefaultProf: Record<string, string>;
+  setConsultorioDefaultProf: (profId: string, consultorioId: string) => void;
+  turnosSyncStatus: 'idle' | 'saving' | 'saved' | 'error';
+  turnosSyncError: string | null;
+  reintentarGuardarTurnos: () => Promise<boolean>;
   asignarTurnoConsultorioFecha: (
     fecha: string,
     consultorioId: string,
@@ -482,6 +487,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return [];
   });
 
+  const [consultoriosDefaultProf, setConsultoriosDefaultProf] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_consultorios_prof`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
+      } catch (e) {
+        console.warn('Error parseando consultorios por profesional:', e);
+      }
+    }
+    return {};
+  });
+
+  const [turnosSyncStatus, setTurnosSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [turnosSyncError, setTurnosSyncError] = useState<string | null>(null);
+
   const [citas, setCitas] = useState<Cita[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_citas`);
     if (saved) {
@@ -630,7 +653,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPacientes(deduplicarPacientes(supaPacientes));
       }
       if (Array.isArray(supaCitas)) {
-        setCitas(supaCitas);
+        const triajesArr = Array.isArray(supaTriajes) ? supaTriajes : [];
+        const citasEnriquecidas = supaCitas.map((c) => {
+          if (c.profesional_id) return c;
+          const triajeVinculado = triajesArr.find((t) => t.cita_id === c.id && t.profesional_id);
+          return triajeVinculado?.profesional_id
+            ? {
+                ...c,
+                profesional_id: triajeVinculado.profesional_id,
+                consultorio_id: c.consultorio_id || triajeVinculado.consultorio_id,
+              }
+            : c;
+        });
+        setCitas(citasEnriquecidas);
       }
       if (Array.isArray(supaAtenciones)) {
         setAtenciones(supaAtenciones);
@@ -653,8 +688,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (Array.isArray(supaProcedimientos) && supaProcedimientos.length > 0) {
         setCatalogoProcedimientos(supaProcedimientos);
       }
-      if (Array.isArray(supaTurnosProgramados)) {
-        setTurnosProgramados(supaTurnosProgramados);
+      if (supaTurnosProgramados) {
+        if (supaTurnosProgramados.turnos.length > 0 || turnosProgramados.length === 0) {
+          setTurnosProgramados(supaTurnosProgramados.turnos);
+        }
+        if (supaTurnosProgramados.consultoriosPorProf) {
+          setConsultoriosDefaultProf((prev) => ({
+            ...prev,
+            ...supaTurnosProgramados.consultoriosPorProf,
+          }));
+        }
+        setTurnosSyncStatus('saved');
+        setTurnosSyncError(null);
       }
     } catch (err: any) {
       console.warn('Error durante sincronización con Supabase:', err);
@@ -708,6 +753,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY}_turnos_programados`, JSON.stringify(turnosProgramados));
   }, [turnosProgramados]);
+
+  useEffect(() => {
+    localStorage.setItem(`${LOCAL_STORAGE_KEY}_consultorios_prof`, JSON.stringify(consultoriosDefaultProf));
+  }, [consultoriosDefaultProf]);
 
   // Cambio rápido de usuario (exclusivo para sesión de desarrollador)
   const setCurrentUser = (user: Usuario) => {
@@ -1348,9 +1397,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  const persistirTurnos = (nextTurnos: AsignacionTurnoDia[]) => {
+  const persistirTurnos = async (
+    nextTurnos: AsignacionTurnoDia[],
+    nextConsultoriosMap: Record<string, string> = consultoriosDefaultProf
+  ): Promise<boolean> => {
+    if (!isSupabaseConfigured()) return true;
+    setTurnosSyncStatus('saving');
+    setTurnosSyncError(null);
+    const res = await supabaseService.saveTurnosProgramados(nextTurnos, nextConsultoriosMap);
+    if (res.ok) {
+      setTurnosSyncStatus('saved');
+      setTurnosSyncError(null);
+      return true;
+    }
+    setTurnosSyncStatus('error');
+    setTurnosSyncError(res.error || 'No se pudieron guardar los turnos en Supabase.');
+    return false;
+  };
+
+  const reintentarGuardarTurnos = async (): Promise<boolean> => {
+    return persistirTurnos(turnosProgramados, consultoriosDefaultProf);
+  };
+
+  const setConsultorioDefaultProf = (profId: string, consultorioId: string) => {
+    const nextMap = { ...consultoriosDefaultProf, [profId]: consultorioId };
+    setConsultoriosDefaultProf(nextMap);
+    setProfesionales((prev) =>
+      prev.map((p) => (p.id === profId ? { ...p, consultorioAsignado: consultorioId } : p))
+    );
     if (isSupabaseConfigured()) {
-      supabaseService.saveTurnosProgramados(nextTurnos).catch(() => {});
+      supabaseService.updateProfesional(profId, { consultorioAsignado: consultorioId }).catch(() => {});
+      void persistirTurnos(turnosProgramados, nextMap);
     }
   };
 
@@ -1959,6 +2036,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateConsultorio,
         asignarProfesionalAConsultorio,
         turnosProgramados,
+        consultoriosDefaultProf,
+        setConsultorioDefaultProf,
+        turnosSyncStatus,
+        turnosSyncError,
+        reintentarGuardarTurnos,
         asignarTurnoConsultorioFecha,
         aplicarTurnoProfesionalFecha,
         importarTurnosMasivo,

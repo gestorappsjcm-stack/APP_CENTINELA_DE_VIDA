@@ -31,6 +31,8 @@ import {
   ChevronDown,
   ChevronUp,
   Paintbrush,
+  RefreshCw,
+  Database,
 } from 'lucide-react';
 
 type VistaRolMode = 'consultorios' | 'profesionales';
@@ -94,10 +96,16 @@ export const ProgramacionTurnosView: React.FC = () => {
     profesionales,
     asignarProfesionalAConsultorio,
     turnosProgramados,
+    consultoriosDefaultProf,
+    setConsultorioDefaultProf,
+    turnosSyncStatus,
+    turnosSyncError,
+    reintentarGuardarTurnos,
     asignarTurnoConsultorioFecha,
     aplicarTurnoProfesionalFecha,
     importarTurnosMasivo,
     limpiarTurnosMes,
+    isSupabaseConfigured,
   } = useApp();
 
   const isDeveloper = isDeveloperMode || currentUser.rol === 'desarrollador';
@@ -115,7 +123,8 @@ export const ProgramacionTurnosView: React.FC = () => {
   const [confirmClearMes, setConfirmClearMes] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [pincel, setPincel] = useState<PincelModo>('SELECT');
-  const [consultorioPorProf, setConsultorioPorProf] = useState<Record<string, string>>({});
+  const [showSqlHelp, setShowSqlHelp] = useState<boolean>(false);
+  const [copiedTurnosSql, setCopiedTurnosSql] = useState<boolean>(false);
 
   const profesionalesActivos = useMemo(
     () =>
@@ -312,7 +321,7 @@ export const ProgramacionTurnosView: React.FC = () => {
   };
 
   const getConsultorioDefaultProf = (profId: string, fecha?: string): string => {
-    if (consultorioPorProf[profId]) return consultorioPorProf[profId];
+    if (consultoriosDefaultProf[profId]) return consultoriosDefaultProf[profId];
     if (fecha) {
       const delDia = turnosDelMes.find(
         (t) =>
@@ -332,6 +341,17 @@ export const ProgramacionTurnosView: React.FC = () => {
     }
     return consultorios[0]?.id || '';
   };
+
+  const TURNOS_SQL_FIX = `-- Ejecutar en Supabase -> SQL Editor para habilitar guardado persistente de Turnos
+CREATE TABLE IF NOT EXISTS public.cv_turnos_programados (
+  clave text PRIMARY KEY,
+  datos jsonb NOT NULL DEFAULT '[]'::jsonb,
+  updated_at timestamptz DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.cv_turnos_programados TO anon, authenticated;
+ALTER TABLE public.cv_turnos_programados ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permitir acceso turnos centinela" ON public.cv_turnos_programados;
+CREATE POLICY "Permitir acceso turnos centinela" ON public.cv_turnos_programados FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);`;
 
   const getBadgeClassPorCodigo = (codigo: CodigoTurnoRol | '') => {
     const found = CODIGOS_ROL.find((c) => c.codigo === codigo);
@@ -357,6 +377,36 @@ export const ProgramacionTurnosView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {isSupabaseConfigured && (
+            <button
+              type="button"
+              onClick={() => reintentarGuardarTurnos()}
+              title="Clic para guardar/sincronizar turnos en Supabase"
+              className={`flex items-center gap-1.5 px-2.5 py-2 text-[11px] font-semibold rounded-xl border cursor-pointer transition-colors ${
+                turnosSyncStatus === 'error'
+                  ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-700'
+                  : turnosSyncStatus === 'saving'
+                    ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+              }`}
+            >
+              {turnosSyncStatus === 'saving' ? (
+                <RefreshCw size={13} className="animate-spin" />
+              ) : (
+                <Database size={13} />
+              )}
+              <span>
+                {turnosSyncStatus === 'saving'
+                  ? 'Guardando...'
+                  : turnosSyncStatus === 'error'
+                    ? 'Error al guardar en BD'
+                    : turnosSyncStatus === 'saved'
+                      ? 'Guardado en Supabase'
+                      : 'Sincronizar Turnos'}
+              </span>
+            </button>
+          )}
+
           {/* Selector de Mes / Año */}
           <div className="flex items-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-1 shadow-xs">
             <button
@@ -400,6 +450,52 @@ export const ProgramacionTurnosView: React.FC = () => {
           )}
         </div>
       </div>
+
+      {turnosSyncStatus === 'error' && turnosSyncError && (
+        <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 font-semibold">
+              <AlertTriangle size={15} className="text-rose-600 shrink-0" />
+              <span>No se pudo guardar en Supabase: {turnosSyncError}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSqlHelp((v) => !v)}
+                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-200 font-bold text-[11px] cursor-pointer"
+              >
+                {showSqlHelp ? 'Ocultar SQL' : 'Ver solución SQL'}
+              </button>
+              <button
+                type="button"
+                onClick={() => reintentarGuardarTurnos()}
+                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] cursor-pointer"
+              >
+                Reintentar
+              </button>
+            </div>
+          </div>
+          {showSqlHelp && (
+            <div className="space-y-2 pt-1">
+              <pre className="p-2.5 rounded-lg bg-slate-900 text-emerald-300 font-mono text-[10.5px] overflow-x-auto">
+                {TURNOS_SQL_FIX}
+              </pre>
+              <button
+                type="button"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(TURNOS_SQL_FIX).catch(() => {});
+                  setCopiedTurnosSql(true);
+                  setTimeout(() => setCopiedTurnosSql(false), 2000);
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 text-white text-[11px] font-semibold cursor-pointer"
+              >
+                <Copy size={12} />
+                <span>{copiedTurnosSql ? 'SQL copiado al portapapeles' : 'Copiar SQL para Supabase'}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {feedbackMsg && (
         <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs font-semibold flex items-center justify-between gap-2">
@@ -861,12 +957,7 @@ export const ProgramacionTurnosView: React.FC = () => {
                         <td className="py-2 px-2">
                           <select
                             value={consSeleccionado}
-                            onChange={(e) =>
-                              setConsultorioPorProf((prev) => ({
-                                ...prev,
-                                [prof.id]: e.target.value,
-                              }))
-                            }
+                            onChange={(e) => setConsultorioDefaultProf(prof.id, e.target.value)}
                             className="w-36 px-1.5 py-1 text-[10.5px] rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 cursor-pointer"
                           >
                             {consultorios.map((c) => (

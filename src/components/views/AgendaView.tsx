@@ -59,6 +59,7 @@ export const AgendaView: React.FC = () => {
   const [actualizarSeguroEnFicha, setActualizarSeguroEnFicha] = useState(false);
   const [nuevaCitaError, setNuevaCitaError] = useState<string | null>(null);
   const [editingProfCitaId, setEditingProfCitaId] = useState<string | null>(null);
+  const [agendaNotice, setAgendaNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // Modal Ticket de Atención
   const [selectedCitaTicket, setSelectedCitaTicket] = useState<Cita | null>(null);
@@ -257,6 +258,25 @@ export const AgendaView: React.FC = () => {
         </button>
       </div>
 
+      {agendaNotice && (
+        <div
+          className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 ${
+            agendaNotice.type === 'err'
+              ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+              : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+          }`}
+        >
+          <span>{agendaNotice.text}</span>
+          <button
+            type="button"
+            onClick={() => setAgendaNotice(null)}
+            className="p-1 rounded hover:bg-black/5 cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Selector de Rango de Vista */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-100 dark:bg-slate-850 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-750">
         <div className="flex items-center gap-1">
@@ -396,8 +416,8 @@ export const AgendaView: React.FC = () => {
                 </tr>
               ) : (
                 citasFiltradas.map((c) => {
-                  const paciente = pacientes.find((p) => p.id === c.paciente_id);
-                  const prof = profesionales.find((p) => p.id === c.profesional_id);
+                  const paciente = pacientes.find((p) => String(p.id) === String(c.paciente_id));
+                  const prof = profesionales.find((p) => String(p.id) === String(c.profesional_id));
 
                   const badgeClass =
                     c.estado === 'PENDIENTE'
@@ -468,11 +488,26 @@ export const AgendaView: React.FC = () => {
                                 const nextConsId = newProfId
                                   ? resolverConsultorioParaCita(newProfId, c.fecha_cita, c.hora_cita)
                                   : undefined;
-                                await updateCita(c.id, {
+                                setEditingProfCitaId(null);
+                                const res = await updateCita(c.id, {
                                   profesional_id: newProfId || undefined,
                                   consultorio_id: nextConsId,
                                 });
-                                setEditingProfCitaId(null);
+                                if (!res.success && res.error) {
+                                  setAgendaNotice({
+                                    type: 'err',
+                                    text: `No se pudo guardar el profesional en Supabase: ${res.error}`,
+                                  });
+                                } else {
+                                  const nombreProf = profesionales.find((x) => x.id === newProfId)?.apellidos_nombres;
+                                  setAgendaNotice({
+                                    type: 'ok',
+                                    text: newProfId
+                                      ? `Profesional "${nombreProf || ''}" asignado y guardado en la cita.`
+                                      : 'Profesional retirado de la cita.',
+                                  });
+                                  setTimeout(() => setAgendaNotice(null), 3500);
+                                }
                               }}
                               onBlur={() => setEditingProfCitaId(null)}
                               className="w-full px-2 py-1 text-[11px] rounded-lg border border-teal-400 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-medium cursor-pointer focus:outline-none"
