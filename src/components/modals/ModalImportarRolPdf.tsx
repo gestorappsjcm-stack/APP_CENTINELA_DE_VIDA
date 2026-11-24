@@ -66,26 +66,43 @@ const mapTipoTurnoACodigo = (tipoTurno: string, codigoOriginal: string): CodigoT
   const norm = (tipoTurno || '').toUpperCase().trim();
   const orig = (codigoOriginal || '').toUpperCase().trim();
 
-  if (norm === 'MAÑANA_TARDE' || norm === 'MANANA_TARDE' || orig === 'MT' || orig === 'M/T' || orig === 'M-T' || orig === 'GD') {
+  if (
+    norm === 'MAÑANA_TARDE' ||
+    norm === 'MANANA_TARDE' ||
+    orig === 'MT' ||
+    orig === 'M/T' ||
+    orig === 'M-T' ||
+    orig === 'M+T' ||
+    orig === 'GD' ||
+    orig === '12H'
+  ) {
     return 'MT';
   }
-  if (norm === 'MAÑANA' || norm === 'MANANA' || orig === 'M' || orig === 'AM') {
+  if (norm === 'MAÑANA' || norm === 'MANANA' || orig === 'M' || orig === 'AM' || orig === 'M1' || orig === 'M2') {
     return 'M';
   }
-  if (norm === 'TARDE' || orig === 'T' || orig === 'PM') {
+  if (norm === 'TARDE' || orig === 'T' || orig === 'PM' || orig === 'T1' || orig === 'T2') {
     return 'T';
   }
-  if (norm === 'FERIADO' || orig === 'FER') {
+  if (norm === 'FERIADO' || orig === 'F' || orig === 'FER' || orig.includes('FERIADO')) {
     return 'F';
   }
-  if (norm === 'LIBRE' || orig === 'L' || orig === 'FR') {
-    return 'L';
+  if (
+    norm === 'VACACIONES' ||
+    orig === 'V' ||
+    orig.includes('VAC') ||
+    orig.includes('LIC') ||
+    orig.includes('MATERNIDAD') ||
+    orig === 'PERM' ||
+    orig === 'DM'
+  ) {
+    return 'V';
   }
-  if (norm === 'DESCANSO' || orig === 'D' || orig === 'DESC') {
+  if (norm === 'DESCANSO' || orig === 'D' || orig === 'DESC' || orig === 'DOM') {
     return 'D';
   }
-  if (norm === 'VACACIONES' || orig === 'V' || orig === 'VAC' || orig === 'LIC') {
-    return 'V';
+  if (norm === 'LIBRE' || orig === 'L' || orig === 'FR' || orig === 'H' || orig.includes('HOSPITAL')) {
+    return 'L';
   }
   return '';
 };
@@ -195,8 +212,20 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
         }),
       });
 
-      const payload = await response.json().catch(() => ({}));
+      const rawResponseText = await response.text();
+      let payload: any = {};
+      try {
+        payload = rawResponseText ? JSON.parse(rawResponseText) : {};
+      } catch {
+        payload = {};
+      }
+
       if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(
+            'El servicio /api/turnos/parse-pdf devolvió 404 (no encontrado en este despliegue). Verifica que la carpeta /api esté desplegada correctamente.'
+          );
+        }
         throw new Error(payload?.error || `Error del servidor (${response.status})`);
       }
 
@@ -237,9 +266,9 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
           consultorios
         );
 
-        const turnosLimpios = (Array.isArray(item.turnos) ? item.turnos : []).filter(
-          (t) => Number.isInteger(t.dia) && t.dia >= 1 && t.dia <= 31
-        );
+        const turnosLimpios = (Array.isArray(item.turnos) ? item.turnos : [])
+          .filter((t) => Number.isInteger(t.dia) && t.dia >= 1 && t.dia <= 31)
+          .sort((a, b) => a.dia - b.dia);
 
         return {
           key: `row-${idx}-${item.nombrePdf}`,

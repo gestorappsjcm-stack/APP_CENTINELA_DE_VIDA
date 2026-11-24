@@ -3,7 +3,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,7 +80,9 @@ app.use(express.json({ limit: '25mb' }));
 app.post('/api/turnos/parse-pdf', async (req, res) => {
   try {
     const body = (req.body || {}) as ParsePdfRequestBody;
-    const rawBase64 = (body.pdfBase64 || '').replace(/^data:application\/pdf;base64,/, '').trim();
+    const rawBase64 = String(body.pdfBase64 || '')
+      .replace(/^data:application\/pdf;base64,/i, '')
+      .trim();
 
     if (!rawBase64) {
       res.status(400).json({ error: 'No se recibió el contenido del archivo PDF.' });
@@ -100,27 +102,40 @@ app.post('/api/turnos/parse-pdf', async (req, res) => {
     const consultoriosLista = Array.isArray(body.consultorios) ? body.consultorios : [];
 
     const now = new Date();
-    const anioDefault = Number(body.anioHint) || now.getFullYear();
-    const mesDefault = Number(body.mesHint) || now.getMonth() + 1;
+    const anioHintNum = Number(body.anioHint);
+    const mesHintNum = Number(body.mesHint);
+    const anioDefault =
+      Number.isInteger(anioHintNum) && anioHintNum >= 2020 && anioHintNum <= 2040
+        ? anioHintNum
+        : now.getFullYear();
+    const mesDefault =
+      Number.isInteger(mesHintNum) && mesHintNum >= 1 && mesHintNum <= 12
+        ? mesHintNum
+        : now.getMonth() + 1;
 
     const profesionalesResumen = profesionalesLista
       .slice(0, 120)
       .map(
         (p) =>
-          `- id="${p.id}" | nombre="${p.apellidos_nombres}" | dni="${p.dni || ''}" | profesion="${p.profesion || ''}" | consultorio="${p.consultorioAsignado || ''}"`
+          `- id="${String(p.id || '')}" | nombre="${String(p.apellidos_nombres || '')}" | dni="${String(p.dni || '')}" | profesion="${String(p.profesion || '')}" | consultorio="${String(p.consultorioAsignado || '')}"`
       )
       .join('\n');
 
     const consultoriosResumen = consultoriosLista
       .slice(0, 50)
-      .map((c) => `- id="${c.id}" | codigo="${c.codigo}" | nombre="${c.nombre}"`)
+      .map(
+        (c) =>
+          `- id="${String(c.id || '')}" | codigo="${String(c.codigo || '')}" | nombre="${String(c.nombre || '')}"`
+      )
       .join('\n');
 
-    const promptText = `Analiza este PDF de "Rol de Turnos" de un Centro de Salud Mental Comunitario (CSMC / MINSA Perú).
-Extrae todos los profesionales que aparecen en el cuadro/rol y sus turnos asignados día por día del mes.
+    const safeFileName = String(body.fileName || 'rol_turnos.pdf').slice(0, 120);
+
+    const promptText = `Analiza visualmente este PDF de "Rol de Turnos / Rol de Trabajo" de un Centro de Salud Mental Comunitario (CSMC / MINSA Perú).
+Extrae todos los profesionales/personal que aparecen en el cuadro y sus turnos asignados día por día del mes (columnas 1 a 31).
 
 Contexto de referencia (si el PDF no especifica año o mes, usa por defecto año=${anioDefault}, mes=${mesDefault}):
-Nombre archivo: ${body.fileName || 'rol_turnos.pdf'}
+Nombre archivo: ${safeFileName}
 
 Catálogo de profesionales registrados en el sistema (úsalos para llenar profesionalIdSugerido cuando coincida nombre o DNI):
 ${profesionalesResumen || '(sin catálogo previo)'}
@@ -128,16 +143,20 @@ ${profesionalesResumen || '(sin catálogo previo)'}
 Catálogo de consultorios registrados (úsalos para llenar consultorioCodigoSugerido usando el campo "codigo"):
 ${consultoriosResumen || '(sin catálogo previo)'}
 
-Reglas de interpretación para códigos comunes de Rol de Turnos MINSA/CSMC:
-- M, MAÑANA, AM, M1, M2, 08-14 -> tipoTurno = "MAÑANA"
-- T, TARDE, PM, T1, T2, 14-20 -> tipoTurno = "TARDE"
-- MT, M/T, M-T, MAÑANA Y TARDE, GD, G, 12H, 08-20 -> tipoTurno = "MAÑANA_TARDE"
-- L, FR, LIBRE, F, FER, FERIADO -> tipoTurno = "LIBRE" (o "FERIADO" si indica F/FER)
-- D, DESC, DESCANSO, DOM -> tipoTurno = "DESCANSO"
-- V, VAC, VACACIONES, LIC, PERM, DM -> tipoTurno = "VACACIONES"
-- Si el código en la celda es otro texto legible relevante, usa tipoTurno = "OTRO" y conserva codigoOriginal exacto.
-- Omite días vacíos o con "-" / sin programación para mantener el JSON compacto.
-- Asegúrate de devolver exactamente el día numérico del mes (1..31) correspondiente a cada columna.`;
+Reglas críticas de lectura de tabla e interpretación:
+1. ALINEACIÓN VISUAL EXACTA: Lee la tabla respetando estrictamente la posición vertical de cada celda respecto a los encabezados numéricos 1..31. Las celdas en blanco (por ejemplo domingos o días libres sin letra) NO deben desplazar los días siguientes hacia la izquierda.
+2. IGNORAR COLUMNAS NO DIARIAS: No confundas la columna "Nº", "CARGO", "HORAS" (ej. 150, 78, 06, 00) ni "CONDICION LABORAL" con días o turnos.
+3. CELDAS COMBINADAS HORIZONTALMENTE: Si una fila tiene una barra o celda combinada horizontalmente (por ejemplo "VACACIONES", "VACACIONES 2026", "LICENCIA POR MATERNIDAD", "DESCANSO MEDICO"), identifica el primer día y el último día cubiertos visualmente por esa barra y genera un registro de turno para CADA día numérico dentro de ese rango con tipoTurno = "VACACIONES" y codigoOriginal exacto (ej. "VACACIONES 2026" o "LICENCIA POR MATERNIDAD").
+4. CÓDIGOS DE TURNO CSMC/MINSA:
+   - M, MAÑANA, AM, M1, M2, 08-14 -> tipoTurno = "MAÑANA"
+   - T, TARDE, PM, T1, T2, 14-20 -> tipoTurno = "TARDE"
+   - MT, M/T, M-T, M+T, MAÑANA Y TARDE, GD, G, 12H, 08-20 -> tipoTurno = "MAÑANA_TARDE"
+   - L, FR, LIBRE, H, ROTACION HOSPITAL -> tipoTurno = "LIBRE" (conservando codigoOriginal, ej. "H" o "L")
+   - F, FER, FERIADO -> tipoTurno = "FERIADO"
+   - D, DESC, DESCANSO, DOM -> tipoTurno = "DESCANSO"
+   - V, VAC, VACACIONES, LIC, LICENCIA, MATERNIDAD, PERM, DM -> tipoTurno = "VACACIONES"
+   - N, NOCHE, u otro código especial legible -> tipoTurno = "OTRO" (conserva codigoOriginal exacto, ej. "N")
+5. Omite días completamente vacíos o con "-" / sin programación para mantener el JSON compacto.`;
 
     const response = await generateWithRetry(() =>
       ai.models.generateContent({
@@ -154,8 +173,9 @@ Reglas de interpretación para códigos comunes de Rol de Turnos MINSA/CSMC:
           ],
         },
         config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           systemInstruction:
-            'Eres un asistente especializado en digitalizar cuadros de Rol de Turnos asistenciales del sector salud peruano (MINSA/CSMC) con precisión exacta por fila (profesional) y columna (día del mes). Devuelve siempre JSON válido siguiendo el esquema.',
+            'Eres un asistente especializado en digitalizar cuadros visuales de Rol de Turnos asistenciales del sector salud peruano (MINSA/CSMC) con precisión exacta por fila (profesional) y columna (día del mes 1..31), incluyendo celdas combinadas de vacaciones o licencias. Devuelve siempre JSON válido siguiendo el esquema.',
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.OBJECT,
