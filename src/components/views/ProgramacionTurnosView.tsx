@@ -346,7 +346,8 @@ export const ProgramacionTurnosView: React.FC = () => {
     return consultorios[0]?.id || '';
   };
 
-  const TURNOS_SQL_FIX = `-- Ejecutar en Supabase -> SQL Editor para habilitar guardado persistente de Turnos
+  const TURNOS_SQL_FIX = `-- Ejecutar en Supabase -> SQL Editor para ampliar cv_configuracion y/o habilitar cv_turnos_programados
+ALTER TABLE IF EXISTS public.cv_configuracion ALTER COLUMN valor TYPE text;
 CREATE TABLE IF NOT EXISTS public.cv_turnos_programados (
   clave text PRIMARY KEY,
   datos jsonb NOT NULL DEFAULT '[]'::jsonb,

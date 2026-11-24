@@ -1,5 +1,5 @@
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
-import { AsignacionTurnoDia, Consultorio, Paciente, Cita, Triaje, AtencionClinica, Profesional, Usuario, FUA } from '../types';
+import { AsignacionTurnoDia, CodigoTurnoRol, Consultorio, Paciente, Cita, Triaje, AtencionClinica, Profesional, Usuario, FUA } from '../types';
 import { parseMedicamentosList } from '../lib/medicamentosHelper';
 import {
   calcularEdadDesdeFecha,
@@ -1697,7 +1697,7 @@ export const supabaseService = {
     return null;
   },
 
-  // 11. PROGRAMACION DE TURNOS POR FECHA (cv_configuracion y/o cv_turnos_programados)
+  // 11. PROGRAMACION DE TURNOS POR FECHA (cv_turnos_programados y/o cv_configuracion con auto-chunking para VARCHAR(100))
   async getTurnosProgramados(): Promise<{
     turnos: AsignacionTurnoDia[];
     consultoriosPorProf?: Record<string, string>;
@@ -1705,12 +1705,76 @@ export const supabaseService = {
     const client = getSupabase();
     if (!client) return null;
 
+    const decodeCompactV2 = (
+      parsed: any
+    ): { turnos: AsignacionTurnoDia[]; consultoriosPorProf?: Record<string, string> } | null => {
+      if (
+        !parsed ||
+        parsed.v !== 2 ||
+        !Array.isArray(parsed.p) ||
+        !Array.isArray(parsed.c) ||
+        !Array.isArray(parsed.r)
+      ) {
+        return null;
+      }
+
+      const profIds: string[] = parsed.p;
+      const consIds: string[] = parsed.c;
+      const turnos: AsignacionTurnoDia[] = [];
+
+      for (const rowStr of parsed.r) {
+        if (typeof rowStr !== 'string') continue;
+        const [fRaw, cRaw, tc, pRaw, cod] = rowStr.split(',');
+        const fecha = /^\d{6}$/.test(fRaw)
+          ? `20${fRaw.slice(0, 2)}-${fRaw.slice(2, 4)}-${fRaw.slice(4, 6)}`
+          : fRaw;
+        const consultorio_id = cRaw !== '' ? consIds[parseInt(cRaw, 36)] || '' : '';
+        const profesional_id = profIds[parseInt(pRaw, 36)] || '';
+        if (!fecha || !profesional_id) continue;
+
+        const turno: AsignacionTurnoDia['turno'] =
+          tc === 'M' ? 'MAÑANA' : tc === 'T' ? 'TARDE' : 'AUSENCIA';
+        const id =
+          turno === 'AUSENCIA'
+            ? `aus__${fecha}__${profesional_id}`
+            : `${fecha}__${consultorio_id}__${turno}`;
+
+        turnos.push({
+          id,
+          fecha,
+          consultorio_id,
+          turno,
+          profesional_id,
+          ...(cod ? { codigo_rol: cod as CodigoTurnoRol } : {}),
+        });
+      }
+
+      let consultoriosPorProf: Record<string, string> | undefined;
+      if (Array.isArray(parsed.d) && parsed.d.length > 0) {
+        consultoriosPorProf = {};
+        for (const pair of parsed.d) {
+          if (typeof pair !== 'string') continue;
+          const [pRaw, cRaw] = pair.split(':');
+          const pId = profIds[parseInt(pRaw, 36)];
+          const cId = consIds[parseInt(cRaw, 36)];
+          if (pId && cId) {
+            consultoriosPorProf[pId] = cId;
+          }
+        }
+      }
+
+      return { turnos, consultoriosPorProf };
+    };
+
     const parsePayload = (
       raw: any
     ): { turnos: AsignacionTurnoDia[]; consultoriosPorProf?: Record<string, string> } | null => {
       if (raw == null) return null;
       try {
         const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (parsed && parsed.v === 2) {
+          return decodeCompactV2(parsed);
+        }
         if (Array.isArray(parsed)) {
           return { turnos: parsed as AsignacionTurnoDia[] };
         }
@@ -1729,38 +1793,12 @@ export const supabaseService = {
       return null;
     };
 
-    try {
-      const { data: rows, error } = await client.from('cv_configuracion').select('*').limit(100);
-      if (!error && Array.isArray(rows)) {
-        const keyCols = ['clave', 'key', 'nombre', 'parametro', 'codigo'];
-        const valCols = ['valor', 'valor_json', 'datos', 'config', 'value', 'contenido', 'turnos_programados'];
-
-        const matchingRow = rows.find((r: any) =>
-          keyCols.some((kc) => String(r?.[kc] || '').trim() === 'programacion_turnos_mensual')
-        );
-        if (matchingRow) {
-          for (const vc of valCols) {
-            const parsed = parsePayload(matchingRow[vc]);
-            if (parsed) return parsed;
-          }
-        }
-
-        // Si es una tabla de configuración de una sola fila (con columna turnos_programados)
-        for (const r of rows) {
-          const parsed = parsePayload((r as any)?.turnos_programados);
-          if (parsed) return parsed;
-        }
-      }
-    } catch (err) {
-      console.warn('No se pudo leer programación de turnos desde cv_configuracion:', err);
-    }
-
-    // Fallback: tabla dedicada cv_turnos_programados si el usuario la creó
+    // 1. Revisar tabla dedicada cv_turnos_programados si existe
     try {
       const { data: tRows, error: tErr } = await client
         .from('cv_turnos_programados')
         .select('*')
-        .limit(100);
+        .limit(50);
       if (!tErr && Array.isArray(tRows) && tRows.length > 0) {
         const cfgRow = tRows.find((r: any) => r.clave === 'programacion_turnos_mensual' || r.datos);
         if (cfgRow) {
@@ -1772,6 +1810,75 @@ export const supabaseService = {
       // Tabla opcional
     }
 
+    // 2. Revisar cv_configuracion (fila única o formato CHUNKED_V2:<N>)
+    try {
+      const keyCols = ['clave', 'key', 'nombre', 'parametro', 'codigo'];
+      const valCols = ['valor', 'valor_json', 'datos', 'config', 'value', 'contenido', 'turnos_programados'];
+
+      const { data: sampleRows, error: sampleErr } = await client
+        .from('cv_configuracion')
+        .select('*')
+        .limit(100);
+
+      if (!sampleErr && Array.isArray(sampleRows)) {
+        const sampleCols = sampleRows[0] ? Object.keys(sampleRows[0]) : [];
+        const detectedKeyCol = keyCols.find((kc) => sampleCols.includes(kc)) || 'clave';
+
+        // Buscar fila maestra programacion_turnos_mensual (siempre por query directa por si hay >100 chunks)
+        let matchingRow = sampleRows.find((r: any) =>
+          keyCols.some((kc) => String(r?.[kc] || '').trim() === 'programacion_turnos_mensual')
+        );
+
+        if (!matchingRow && sampleCols.includes(detectedKeyCol)) {
+          const { data: directRow } = await client
+            .from('cv_configuracion')
+            .select('*')
+            .eq(detectedKeyCol, 'programacion_turnos_mensual')
+            .maybeSingle();
+          if (directRow) matchingRow = directRow;
+        }
+
+        if (matchingRow) {
+          // Verificar si está almacenado en fragmentos CHUNKED_V2:<N>
+          for (const vc of valCols) {
+            const rawVal = matchingRow[vc];
+            if (typeof rawVal === 'string' && rawVal.startsWith('CHUNKED_V2:')) {
+              const expectedCount = Number(rawVal.split(':')[1] || 0);
+              const { data: chunkRows } = await fetchAllRows((from, to) =>
+                client
+                  .from('cv_configuracion')
+                  .select('*')
+                  .like(detectedKeyCol, 'pt_c_%')
+                  .order(detectedKeyCol, { ascending: true })
+                  .range(from, to)
+              );
+
+              if (Array.isArray(chunkRows) && chunkRows.length > 0) {
+                const sorted = [...chunkRows].sort((a: any, b: any) =>
+                  String(a?.[detectedKeyCol] || '').localeCompare(String(b?.[detectedKeyCol] || ''))
+                );
+                const slice = expectedCount > 0 ? sorted.slice(0, expectedCount) : sorted;
+                const combined = slice.map((r: any) => String(r?.[vc] ?? '')).join('');
+                const parsed = parsePayload(combined);
+                if (parsed) return parsed;
+              }
+            }
+
+            const parsed = parsePayload(rawVal);
+            if (parsed) return parsed;
+          }
+        }
+
+        // Si es una tabla de configuración de una sola fila (con columna turnos_programados)
+        for (const r of sampleRows) {
+          const parsed = parsePayload((r as any)?.turnos_programados);
+          if (parsed) return parsed;
+        }
+      }
+    } catch (err) {
+      console.warn('No se pudo leer programación de turnos desde cv_configuracion:', err);
+    }
+
     return null;
   },
 
@@ -1781,6 +1888,53 @@ export const supabaseService = {
   ): Promise<{ ok: boolean; error?: string; needsSql?: boolean }> {
     const client = getSupabase();
     if (!client) return { ok: false, error: 'Supabase no está configurado.' };
+
+    const encodeCompactV2 = (): string => {
+      const profIds: string[] = [];
+      const profIdxMap = new Map<string, number>();
+      const getProfIdx = (id: string) => {
+        const existing = profIdxMap.get(id);
+        if (existing !== undefined) return existing;
+        const next = profIds.length;
+        profIds.push(id);
+        profIdxMap.set(id, next);
+        return next;
+      };
+
+      const consIds: string[] = [];
+      const consIdxMap = new Map<string, number>();
+      const getConsIdx = (id: string) => {
+        if (!id) return '';
+        const existing = consIdxMap.get(id);
+        if (existing !== undefined) return existing.toString(36);
+        const next = consIds.length;
+        consIds.push(id);
+        consIdxMap.set(id, next);
+        return next.toString(36);
+      };
+
+      const rows: string[] = turnos.map((t) => {
+        const f =
+          t.fecha.startsWith('20') && t.fecha.length === 10
+            ? t.fecha.slice(2).replace(/-/g, '')
+            : t.fecha;
+        const c = getConsIdx(t.consultorio_id || '');
+        const tc = t.turno === 'MAÑANA' ? 'M' : t.turno === 'TARDE' ? 'T' : 'A';
+        const p = getProfIdx(t.profesional_id).toString(36);
+        const cod = t.codigo_rol || (tc === 'M' || tc === 'T' ? tc : '');
+        return `${f},${c},${tc},${p},${cod}`;
+      });
+
+      const defs: string[] = [];
+      if (consultoriosPorProf) {
+        for (const [profId, consId] of Object.entries(consultoriosPorProf)) {
+          if (!profId || !consId) continue;
+          defs.push(`${getProfIdx(profId).toString(36)}:${getConsIdx(consId)}`);
+        }
+      }
+
+      return JSON.stringify({ v: 2, p: profIds, c: consIds, r: rows, d: defs });
+    };
 
     const payloadObj =
       consultoriosPorProf && Object.keys(consultoriosPorProf).length > 0
@@ -1794,109 +1948,7 @@ export const supabaseService = {
 
     let lastError: any = null;
 
-    try {
-      // 1. Leer filas existentes de cv_configuracion para detectar columnas reales y evitar ON CONFLICT
-      const { data: rows, error: readErr } = await client.from('cv_configuracion').select('*').limit(50);
-
-      if (readErr) {
-        const rlsCheck = formatSupabaseWriteError('cv_configuracion', readErr, '');
-        if (rlsCheck.isRls) {
-          return { ok: false, error: rlsCheck.message, needsSql: true };
-        }
-        lastError = readErr;
-      } else if (Array.isArray(rows)) {
-        const sampleCols = rows[0] ? Object.keys(rows[0]) : [];
-        const detectedKeyCol = keyCols.find((kc) => sampleCols.includes(kc));
-        const detectedValCols = valCols.filter((vc) => sampleCols.includes(vc));
-
-        const matchingRow = rows.find((r: any) =>
-          keyCols.some((kc) => String(r?.[kc] || '').trim() === 'programacion_turnos_mensual')
-        );
-
-        const tryWriteValue = async (
-          mode: 'update' | 'insert',
-          keyCol: string,
-          valCol: string,
-          matchCol?: string,
-          matchVal?: any
-        ): Promise<{ ok: boolean; rlsErr?: string; error?: any }> => {
-          const candidates = jsonPreferredCols.has(valCol)
-            ? [payloadObj, serialized]
-            : [serialized, payloadObj];
-
-          for (const val of candidates) {
-            const body: Record<string, any> =
-              mode === 'insert'
-                ? { [keyCol]: 'programacion_turnos_mensual', [valCol]: val }
-                : { [valCol]: val };
-
-            const query =
-              mode === 'insert'
-                ? client.from('cv_configuracion').insert([body])
-                : client.from('cv_configuracion').update(body).eq(matchCol!, matchVal);
-
-            const { error } = await query;
-            if (!error) return { ok: true };
-
-            const rls = formatSupabaseWriteError('cv_configuracion', error, '');
-            if (rls.isRls) return { ok: false, rlsErr: rls.message };
-            lastError = error;
-
-            const missing = extractMissingSchemaColumn(error);
-            if (missing) break; // columna no existe, probar siguiente columna
-          }
-          return { ok: false, error: lastError };
-        };
-
-        // Caso A: La fila ya existe en cv_configuracion -> UPDATE directo sin ON CONFLICT
-        if (matchingRow) {
-          const matchCol =
-            'id' in matchingRow && matchingRow.id != null
-              ? 'id'
-              : keyCols.find((kc) => String(matchingRow[kc] || '').trim() === 'programacion_turnos_mensual') || 'clave';
-          const matchVal = matchingRow[matchCol];
-          const colsToTry = detectedValCols.length > 0 ? detectedValCols : valCols;
-
-          for (const vc of colsToTry) {
-            const res = await tryWriteValue('update', matchCol, vc, matchCol, matchVal);
-            if (res.ok) return { ok: true };
-            if (res.rlsErr) return { ok: false, error: res.rlsErr, needsSql: true };
-          }
-        }
-
-        // Caso B: La tabla tiene filas sin columna clave (ej. tabla 1 fila de establecimiento con turnos_programados)
-        if (!matchingRow && rows.length > 0 && !detectedKeyCol) {
-          const rowTarget = rows[0];
-          const idCol = 'id' in rowTarget ? 'id' : Object.keys(rowTarget)[0];
-          const singleRowValCols = ['turnos_programados', 'valor_json', 'datos', 'config'].filter((c) =>
-            sampleCols.includes(c)
-          );
-          for (const vc of singleRowValCols) {
-            const res = await tryWriteValue('update', idCol, vc, idCol, rowTarget[idCol]);
-            if (res.ok) return { ok: true };
-            if (res.rlsErr) return { ok: false, error: res.rlsErr, needsSql: true };
-          }
-        }
-
-        // Caso C: Insertar nueva fila en cv_configuracion
-        if (!matchingRow) {
-          const keyCandidates = detectedKeyCol ? [detectedKeyCol] : ['clave', 'key', 'nombre'];
-          const valCandidates = detectedValCols.length > 0 ? detectedValCols : ['valor', 'valor_json', 'datos', 'value'];
-
-          for (const kc of keyCandidates) {
-            for (const vc of valCandidates) {
-              const res = await tryWriteValue('insert', kc, vc);
-              if (res.ok) return { ok: true };
-              if (res.rlsErr) return { ok: false, error: res.rlsErr, needsSql: true };
-            }
-          }
-        }
-      }
-    } catch (err: any) {
-      lastError = err;
-    }
-
-    // 2. Fallback: intentar tabla dedicada cv_turnos_programados (por si existe en BD)
+    // 1. Intentar tabla dedicada cv_turnos_programados si el usuario ya la creó
     try {
       const { data: existingT, error: errT } = await client
         .from('cv_turnos_programados')
@@ -1917,7 +1969,211 @@ export const supabaseService = {
         lastError = writeRes.error;
       }
     } catch {
-      // Tabla opcional no creada aún
+      // Tabla opcional
+    }
+
+    // 2. Guardar en cv_configuracion (fila única o auto-chunking si valor es VARCHAR(100))
+    try {
+      const { data: rows, error: readErr } = await client.from('cv_configuracion').select('*').limit(50);
+
+      if (readErr) {
+        const rlsCheck = formatSupabaseWriteError('cv_configuracion', readErr, '');
+        if (rlsCheck.isRls) {
+          return { ok: false, error: rlsCheck.message, needsSql: true };
+        }
+        lastError = readErr;
+      } else if (Array.isArray(rows)) {
+        const sampleCols = rows[0] ? Object.keys(rows[0]) : [];
+        const detectedKeyCol = keyCols.find((kc) => sampleCols.includes(kc)) || 'clave';
+        const detectedValCols = valCols.filter((vc) => sampleCols.includes(vc));
+
+        let matchingRow = rows.find((r: any) =>
+          keyCols.some((kc) => String(r?.[kc] || '').trim() === 'programacion_turnos_mensual')
+        );
+        if (!matchingRow && sampleCols.includes(detectedKeyCol)) {
+          const { data: directRow } = await client
+            .from('cv_configuracion')
+            .select('*')
+            .eq(detectedKeyCol, 'programacion_turnos_mensual')
+            .maybeSingle();
+          if (directRow) matchingRow = directRow;
+        }
+
+        const isLengthLimitError = (err: any) => {
+          const msg = String(err?.message || '').toLowerCase();
+          return (
+            err?.code === '22001' ||
+            msg.includes('value too long') ||
+            msg.includes('character varying')
+          );
+        };
+
+        const saveChunkedV2 = async (keyCol: string, valCol: string): Promise<boolean> => {
+          const compact = encodeCompactV2();
+          const CHUNK_SIZE = 88; // Cabe seguro dentro de VARCHAR(100)
+          const chunks: string[] = [];
+          for (let i = 0; i < compact.length; i += CHUNK_SIZE) {
+            chunks.push(compact.slice(i, i + CHUNK_SIZE));
+          }
+          if (chunks.length === 0) chunks.push('{}');
+
+          // Limpiar fragmentos previos (si DELETE está permitido)
+          await client.from('cv_configuracion').delete().like(keyCol, 'pt_c_%');
+
+          const chunkRows = chunks.map((chunk, idx) => ({
+            [keyCol]: `pt_c_${String(idx).padStart(4, '0')}`,
+            [valCol]: chunk,
+          }));
+
+          // Insertar en lotes de 100 filas
+          for (let i = 0; i < chunkRows.length; i += 100) {
+            const batch = chunkRows.slice(i, i + 100);
+            const { error: insErr } = await client.from('cv_configuracion').insert(batch);
+            if (insErr) {
+              // Si existían filas previas porque DELETE no aplicó, actualizar una por una / insertar faltantes
+              if (insErr.code === '23505') {
+                for (const rowItem of batch) {
+                  const kVal = rowItem[keyCol];
+                  const { data: existingChunk } = await client
+                    .from('cv_configuracion')
+                    .select('*')
+                    .eq(keyCol, kVal)
+                    .maybeSingle();
+                  const rowRes = existingChunk
+                    ? await client
+                        .from('cv_configuracion')
+                        .update({ [valCol]: rowItem[valCol] })
+                        .eq(keyCol, kVal)
+                    : await client.from('cv_configuracion').insert([rowItem]);
+                  if (rowRes.error) {
+                    lastError = rowRes.error;
+                    return false;
+                  }
+                }
+              } else {
+                lastError = insErr;
+                return false;
+              }
+            }
+          }
+
+          // Guardar puntero maestro (<= 20 caracteres, cabe en VARCHAR(100))
+          const markerVal = `CHUNKED_V2:${chunks.length}`;
+          const markerRes = matchingRow
+            ? await client
+                .from('cv_configuracion')
+                .update({ [valCol]: markerVal })
+                .eq(keyCol, 'programacion_turnos_mensual')
+            : await client
+                .from('cv_configuracion')
+                .insert([{ [keyCol]: 'programacion_turnos_mensual', [valCol]: markerVal }]);
+
+          if (markerRes.error) {
+            lastError = markerRes.error;
+            return false;
+          }
+          return true;
+        };
+
+        const tryWriteValue = async (
+          mode: 'update' | 'insert',
+          keyCol: string,
+          valCol: string,
+          matchCol?: string,
+          matchVal?: any
+        ): Promise<{ ok: boolean; rlsErr?: string; lengthErr?: boolean; error?: any }> => {
+          const candidates = jsonPreferredCols.has(valCol)
+            ? [payloadObj, serialized]
+            : [serialized, payloadObj];
+
+          for (const val of candidates) {
+            const body: Record<string, any> =
+              mode === 'insert'
+                ? { [keyCol]: 'programacion_turnos_mensual', [valCol]: val }
+                : { [valCol]: val };
+
+            const query =
+              mode === 'insert'
+                ? client.from('cv_configuracion').insert([body])
+                : client.from('cv_configuracion').update(body).eq(matchCol!, matchVal);
+
+            const { error } = await query;
+            if (!error) {
+              // Limpiar fragmentos antiguos si ahora cupo en una sola fila
+              await client.from('cv_configuracion').delete().like(detectedKeyCol, 'pt_c_%');
+              return { ok: true };
+            }
+
+            const rls = formatSupabaseWriteError('cv_configuracion', error, '');
+            if (rls.isRls) return { ok: false, rlsErr: rls.message };
+            lastError = error;
+
+            if (isLengthLimitError(error)) {
+              return { ok: false, lengthErr: true, error };
+            }
+
+            const missing = extractMissingSchemaColumn(error);
+            if (missing) break;
+          }
+          return { ok: false, error: lastError };
+        };
+
+        // Caso A: La fila ya existe en cv_configuracion
+        if (matchingRow) {
+          const matchCol =
+            'id' in matchingRow && matchingRow.id != null
+              ? 'id'
+              : keyCols.find((kc) => String(matchingRow[kc] || '').trim() === 'programacion_turnos_mensual') || 'clave';
+          const matchVal = matchingRow[matchCol];
+          const colsToTry = detectedValCols.length > 0 ? detectedValCols : valCols;
+
+          for (const vc of colsToTry) {
+            const res = await tryWriteValue('update', detectedKeyCol, vc, matchCol, matchVal);
+            if (res.ok) return { ok: true };
+            if (res.rlsErr) return { ok: false, error: res.rlsErr, needsSql: true };
+            if (res.lengthErr) {
+              const chunkedOk = await saveChunkedV2(detectedKeyCol, vc);
+              if (chunkedOk) return { ok: true };
+            }
+          }
+        }
+
+        // Caso B: La tabla tiene filas sin columna clave (ej. tabla 1 fila de establecimiento con turnos_programados)
+        if (!matchingRow && rows.length > 0 && !keyCols.some((kc) => sampleCols.includes(kc))) {
+          const rowTarget = rows[0];
+          const idCol = 'id' in rowTarget ? 'id' : Object.keys(rowTarget)[0];
+          const singleRowValCols = ['turnos_programados', 'valor_json', 'datos', 'config'].filter((c) =>
+            sampleCols.includes(c)
+          );
+          for (const vc of singleRowValCols) {
+            const res = await tryWriteValue('update', idCol, vc, idCol, rowTarget[idCol]);
+            if (res.ok) return { ok: true };
+            if (res.rlsErr) return { ok: false, error: res.rlsErr, needsSql: true };
+          }
+        }
+
+        // Caso C: Insertar nueva fila en cv_configuracion
+        if (!matchingRow) {
+          const keyCandidates = keyCols.some((kc) => sampleCols.includes(kc))
+            ? [detectedKeyCol]
+            : ['clave', 'key', 'nombre'];
+          const valCandidates = detectedValCols.length > 0 ? detectedValCols : ['valor', 'valor_json', 'datos', 'value'];
+
+          for (const kc of keyCandidates) {
+            for (const vc of valCandidates) {
+              const res = await tryWriteValue('insert', kc, vc);
+              if (res.ok) return { ok: true };
+              if (res.rlsErr) return { ok: false, error: res.rlsErr, needsSql: true };
+              if (res.lengthErr) {
+                const chunkedOk = await saveChunkedV2(kc, vc);
+                if (chunkedOk) return { ok: true };
+              }
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      lastError = err;
     }
 
     const msg = formatSupabaseWriteError(
