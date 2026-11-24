@@ -20,6 +20,7 @@ import {
   FastForward,
   UserMinus,
   Sparkles,
+  Edit2,
 } from 'lucide-react';
 import { TicketAtencionModal } from '../modals/TicketAtencionModal';
 
@@ -29,7 +30,9 @@ export const AgendaView: React.FC = () => {
     pacientes,
     profesionales,
     consultorios,
+    turnosProgramados,
     addCita,
+    updateCita,
     updatePaciente,
     confirmarCita,
     cancelarCita,
@@ -54,6 +57,8 @@ export const AgendaView: React.FC = () => {
   const [citaMotivo, setCitaMotivo] = useState('');
   const [citaSeguro, setCitaSeguro] = useState<'SIS' | 'ESSALUD' | 'PARTICULAR' | 'OTRO'>('SIS');
   const [actualizarSeguroEnFicha, setActualizarSeguroEnFicha] = useState(false);
+  const [nuevaCitaError, setNuevaCitaError] = useState<string | null>(null);
+  const [editingProfCitaId, setEditingProfCitaId] = useState<string | null>(null);
 
   // Modal Ticket de Atención
   const [selectedCitaTicket, setSelectedCitaTicket] = useState<Cita | null>(null);
@@ -125,10 +130,42 @@ export const AgendaView: React.FC = () => {
       return fA.localeCompare(fB);
     });
 
+  const resolverConsultorioParaCita = (profId: string, fecha: string, hora: string): string | undefined => {
+    if (!profId) return undefined;
+    const turnoPreferido = hora && hora < '14:00' ? 'MAÑANA' : 'TARDE';
+    const fechaNorm = normalizarFecha(fecha);
+    const delRol =
+      turnosProgramados.find(
+        (t) =>
+          t.fecha === fechaNorm &&
+          t.profesional_id === profId &&
+          t.turno === turnoPreferido &&
+          t.consultorio_id
+      ) ||
+      turnosProgramados.find(
+        (t) =>
+          t.fecha === fechaNorm &&
+          t.profesional_id === profId &&
+          (t.turno === 'MAÑANA' || t.turno === 'TARDE') &&
+          t.consultorio_id
+      );
+
+    if (delRol?.consultorio_id) return delRol.consultorio_id;
+
+    const profSeleccionado = profesionales.find((p) => p.id === profId);
+    const consAsignado = profSeleccionado?.consultorioAsignado
+      ? consultorios.find(
+          (c) => c.id === profSeleccionado.consultorioAsignado || c.codigo === profSeleccionado.consultorioAsignado
+        )
+      : undefined;
+    return consAsignado?.id || undefined;
+  };
+
   const handleCrearCita = (e: React.FormEvent) => {
     e.preventDefault();
+    setNuevaCitaError(null);
     if (!selectedPacienteId) {
-      alert('Debe seleccionar un paciente');
+      setNuevaCitaError('Debe buscar y seleccionar un paciente de la lista antes de guardar la cita.');
       return;
     }
 
@@ -137,17 +174,14 @@ export const AgendaView: React.FC = () => {
       updatePaciente(selectedPacienteId, { seguro: citaSeguro as any });
     }
 
-    const profSeleccionado = profesionales.find((p) => p.id === citaProfId);
-    const consAsignado = profSeleccionado?.consultorioAsignado
-      ? consultorios.find(
-          (c) => c.id === profSeleccionado.consultorioAsignado || c.codigo === profSeleccionado.consultorioAsignado
-        )
+    const consultorioResuelto = citaProfId
+      ? resolverConsultorioParaCita(citaProfId, citaFecha, citaHora)
       : undefined;
 
     const res = addCita({
       paciente_id: selectedPacienteId,
       profesional_id: citaProfId || undefined,
-      consultorio_id: consAsignado?.id || undefined,
+      consultorio_id: consultorioResuelto,
       fecha_cita: citaFecha,
       hora_cita: citaHora,
       tipo_cita: citaTipo,
@@ -159,8 +193,10 @@ export const AgendaView: React.FC = () => {
     setIsModalNuevaCita(false);
     setSelectedPacienteId('');
     setPacienteSearch('');
+    setCitaProfId('');
     setCitaMotivo('');
     setActualizarSeguroEnFicha(false);
+    setNuevaCitaError(null);
 
     if (res?.cita) {
       setSelectedCitaTicket(res.cita);
@@ -211,6 +247,7 @@ export const AgendaView: React.FC = () => {
         <button
           onClick={() => {
             setCitaFecha(filtroFecha || hoyStr);
+            setNuevaCitaError(null);
             setIsModalNuevaCita(true);
           }}
           className="flex items-center gap-2 bg-[#1A2B4A] hover:bg-[#243b5e] text-white px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer shadow-md transition-all self-start md:self-auto"
@@ -421,10 +458,68 @@ export const AgendaView: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-3">
-                        <div className="font-medium text-slate-800 dark:text-slate-200">
-                          {prof?.apellidos_nombres || 'Sin profesional asignado'}
-                        </div>
-                        <div className="text-[10px] text-slate-400">{prof?.profesion}</div>
+                        {editingProfCitaId === c.id ? (
+                          <div className="flex items-center gap-1 min-w-[190px]">
+                            <select
+                              autoFocus
+                              value={c.profesional_id || ''}
+                              onChange={async (e) => {
+                                const newProfId = e.target.value;
+                                const nextConsId = newProfId
+                                  ? resolverConsultorioParaCita(newProfId, c.fecha_cita, c.hora_cita)
+                                  : undefined;
+                                await updateCita(c.id, {
+                                  profesional_id: newProfId || undefined,
+                                  consultorio_id: nextConsId,
+                                });
+                                setEditingProfCitaId(null);
+                              }}
+                              onBlur={() => setEditingProfCitaId(null)}
+                              className="w-full px-2 py-1 text-[11px] rounded-lg border border-teal-400 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-medium cursor-pointer focus:outline-none"
+                            >
+                              <option value="">-- Sin profesional --</option>
+                              {profesionales
+                                .filter((p) => p.estado === 'ACTIVO')
+                                .map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.apellidos_nombres}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="flex items-start justify-between gap-1.5 group">
+                            <div>
+                              <div
+                                className={`font-medium ${
+                                  prof
+                                    ? 'text-slate-800 dark:text-slate-200'
+                                    : 'text-amber-700 dark:text-amber-300 italic'
+                                }`}
+                              >
+                                {prof?.apellidos_nombres || 'Sin profesional asignado'}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {prof?.profesion}
+                                {c.consultorio_id &&
+                                  (() => {
+                                    const cons = consultorios.find((x) => x.id === c.consultorio_id);
+                                    return cons ? ` • ${cons.codigo}` : '';
+                                  })()}
+                              </div>
+                            </div>
+                            {c.estado !== 'CANCELADA' && (
+                              <button
+                                type="button"
+                                onClick={() => setEditingProfCitaId(c.id)}
+                                title={prof ? 'Cambiar profesional asignado' : 'Asignar profesional ahora'}
+                                className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 rounded cursor-pointer transition-colors shrink-0"
+                              >
+                                <Edit2 size={12} />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       <td className="py-3 px-3 font-medium text-slate-600 dark:text-slate-400">
@@ -702,6 +797,13 @@ export const AgendaView: React.FC = () => {
             </div>
 
             <form onSubmit={handleCrearCita} className="p-6 space-y-4">
+              {nuevaCitaError && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs font-medium flex items-center gap-2">
+                  <AlertCircle size={15} className="text-rose-600 shrink-0" />
+                  <span>{nuevaCitaError}</span>
+                </div>
+              )}
+
               {/* Seleccionar Paciente */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -835,19 +937,35 @@ export const AgendaView: React.FC = () => {
                   className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none cursor-pointer"
                 >
                   <option value="">Seleccione profesional...</option>
-                  {profesionales.map((p) => {
-                    const cons = p.consultorioAsignado
-                      ? consultorios.find(
-                          (c) => c.id === p.consultorioAsignado || c.codigo === p.consultorioAsignado
-                        )
-                      : undefined;
-                    return (
-                      <option key={p.id} value={p.id}>
-                        {p.apellidos_nombres} ({p.profesion}
-                        {cons ? ` • ${cons.codigo}` : ''})
-                      </option>
-                    );
-                  })}
+                  {profesionales
+                    .filter((p) => p.estado === 'ACTIVO')
+                    .map((p) => {
+                      const rolDelDia = turnosProgramados.filter(
+                        (t) =>
+                          t.fecha === normalizarFecha(citaFecha) &&
+                          t.profesional_id === p.id &&
+                          (t.turno === 'MAÑANA' || t.turno === 'TARDE')
+                      );
+                      const consId = rolDelDia[0]?.consultorio_id || p.consultorioAsignado;
+                      const cons = consId
+                        ? consultorios.find((c) => c.id === consId || c.codigo === consId)
+                        : undefined;
+                      const etiquetaTurno =
+                        rolDelDia.length === 2
+                          ? ' • Rol: MT'
+                          : rolDelDia[0]?.turno === 'MAÑANA'
+                            ? ' • Rol: M'
+                            : rolDelDia[0]?.turno === 'TARDE'
+                              ? ' • Rol: T'
+                              : '';
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {p.apellidos_nombres} ({p.profesion}
+                          {cons ? ` • ${cons.codigo}` : ''}
+                          {etiquetaTurno})
+                        </option>
+                      );
+                    })}
                 </select>
               </div>
 
@@ -939,7 +1057,7 @@ export const AgendaView: React.FC = () => {
       {/* Modal Ticket de Atención */}
       {isTicketModalOpen && selectedCitaTicket && (
         <TicketAtencionModal
-          cita={selectedCitaTicket}
+          cita={citas.find((item) => item.id === selectedCitaTicket.id) || selectedCitaTicket}
           onClose={() => {
             setIsTicketModalOpen(false);
             setSelectedCitaTicket(null);

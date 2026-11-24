@@ -593,7 +593,12 @@ export const supabaseService = {
         return data.map((c: any) => ({
           id: String(c.id),
           paciente_id: String(c.paciente_id),
-          profesional_id: c.profesional_id ? String(c.profesional_id) : undefined,
+          profesional_id: c.profesional_id
+            ? String(c.profesional_id)
+            : c.medico_id
+              ? String(c.medico_id)
+              : undefined,
+          consultorio_id: c.consultorio_id ? String(c.consultorio_id) : undefined,
           fecha_cita: c.fecha_cita,
           hora_cita: c.hora_cita,
           tipo_cita: c.tipo_cita || 'CONSULTA',
@@ -612,11 +617,14 @@ export const supabaseService = {
     return null;
   },
 
-  async insertCita(cita: Cita): Promise<boolean> {
+  async insertCita(cita: Cita): Promise<{ ok: boolean; id?: string; error?: string }> {
     const client = getSupabase();
-    if (!client) return false;
+    if (!client) return { ok: false };
     try {
-      const payload: Record<string, any> = {
+      const isUuid = (val?: string) =>
+        Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
+      const workingPayload: Record<string, any> = {
         paciente_id: cita.paciente_id,
         fecha_cita: cita.fecha_cita ? cita.fecha_cita.split('T')[0] : cita.fecha_cita,
         hora_cita: cita.hora_cita,
@@ -625,50 +633,132 @@ export const supabaseService = {
         motivo_consulta: cita.motivo_consulta || null,
         seguro_cita: cita.seguro_cita || 'SIS',
       };
-      if (cita.profesional_id) payload.profesional_id = cita.profesional_id;
-      if (cita.observaciones) payload.observaciones = cita.observaciones;
-      if (cita.numero_ticket) payload.numero_ticket = cita.numero_ticket;
+      if (isUuid(cita.id)) workingPayload.id = cita.id;
+      if (cita.profesional_id) workingPayload.profesional_id = cita.profesional_id;
+      if (cita.consultorio_id) workingPayload.consultorio_id = cita.consultorio_id;
+      if (cita.observaciones) workingPayload.observaciones = cita.observaciones;
+      if (cita.numero_ticket) workingPayload.numero_ticket = cita.numero_ticket;
 
-      const { data, error } = await client.from('cv_citas').insert([payload]).select();
-      if (!error && data && data[0]?.id) {
-        cita.id = String(data[0].id);
-        return true;
+      let lastErr: any = null;
+      for (let attempt = 0; attempt < 14; attempt++) {
+        const { data, error } = await client.from('cv_citas').insert([workingPayload]).select('id');
+        if (!error) {
+          const savedId = data?.[0]?.id ? String(data[0].id) : workingPayload.id || cita.id;
+          if (savedId) cita.id = savedId;
+          return { ok: true, id: savedId };
+        }
+        lastErr = error;
+
+        const rlsCheck = formatSupabaseWriteError('cv_citas', error, '');
+        if (rlsCheck.isRls) return { ok: false, error: rlsCheck.message };
+
+        const missingCol = extractMissingSchemaColumn(error);
+        if (missingCol && missingCol in workingPayload) {
+          if (missingCol === 'profesional_id' && !('medico_id' in workingPayload)) {
+            workingPayload.medico_id = workingPayload.profesional_id;
+          }
+          delete workingPayload[missingCol];
+          continue;
+        }
+
+        const msg = String(error?.message || '').toLowerCase();
+        const details = String(error?.details || '').toLowerCase();
+        const combined = `${msg} ${details}`;
+
+        // Si consultorio_id es tipo uuid/FK en BD pero el id local es 'cons-1', descartarlo sin perder profesional_id
+        if ('consultorio_id' in workingPayload && (!isUuid(String(workingPayload.consultorio_id)) || combined.includes('consultorio'))) {
+          delete workingPayload.consultorio_id;
+          continue;
+        }
+
+        // Si profesional_id local no es UUID pero la columna en BD exige UUID, evitar que aborte toda la inserción
+        if ('profesional_id' in workingPayload && !isUuid(String(workingPayload.profesional_id)) && combined.includes('uuid')) {
+          delete workingPayload.profesional_id;
+          continue;
+        }
+
+        // Si id explícito falla por tipo/secuencia, dejar que Postgres genere el id
+        if ('id' in workingPayload && (combined.includes('uuid') || combined.includes('integer') || combined.includes('bigint'))) {
+          delete workingPayload.id;
+          continue;
+        }
+
+        break;
       }
-      if (error) {
-        // Fallback con los campos estrictamente esenciales
-        const { error: err2 } = await client.from('cv_citas').insert([{
-          paciente_id: cita.paciente_id,
-          fecha_cita: cita.fecha_cita ? cita.fecha_cita.split('T')[0] : cita.fecha_cita,
-          hora_cita: cita.hora_cita,
-          estado: cita.estado || 'PENDIENTE',
-        }]);
-        return !err2;
-      }
-      return !error;
-    } catch (err) {
+
+      console.warn('Error insertando cita en Supabase:', lastErr);
+      return {
+        ok: false,
+        error: formatSupabaseWriteError('cv_citas', lastErr, 'No se pudo guardar la cita en Supabase.').message,
+      };
+    } catch (err: any) {
       console.warn('Error insertando cita en Supabase:', err);
-      return false;
+      return {
+        ok: false,
+        error: formatSupabaseWriteError('cv_citas', err, 'Error al insertar cita en Supabase.').message,
+      };
     }
   },
 
-  async updateCita(id: string, data: Partial<Cita>): Promise<boolean> {
+  async updateCita(id: string, data: Partial<Cita>): Promise<{ ok: boolean; error?: string }> {
     const client = getSupabase();
-    if (!client) return false;
+    if (!client) return { ok: false };
     try {
-      const updatePayload: Record<string, any> = {};
-      if (data.estado !== undefined) updatePayload.estado = data.estado;
-      if (data.fecha_cita !== undefined) updatePayload.fecha_cita = data.fecha_cita.split('T')[0];
-      if (data.hora_cita !== undefined) updatePayload.hora_cita = data.hora_cita;
-      if (data.observaciones !== undefined) updatePayload.observaciones = data.observaciones;
-      if (data.seguro_cita !== undefined) updatePayload.seguro_cita = data.seguro_cita;
-      if (data.triaje_completado !== undefined) updatePayload.triaje_completado = data.triaje_completado;
-      if (data.atencion_completada !== undefined) updatePayload.atencion_completada = data.atencion_completada;
+      const isUuid = (val?: string) =>
+        Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
-      const { error } = await client.from('cv_citas').update(updatePayload).eq('id', id);
-      return !error;
-    } catch (err) {
+      const workingPayload: Record<string, any> = {};
+      if (data.profesional_id !== undefined) workingPayload.profesional_id = data.profesional_id || null;
+      if (data.consultorio_id !== undefined) workingPayload.consultorio_id = data.consultorio_id || null;
+      if (data.estado !== undefined) workingPayload.estado = data.estado;
+      if (data.fecha_cita !== undefined) workingPayload.fecha_cita = data.fecha_cita.split('T')[0];
+      if (data.hora_cita !== undefined) workingPayload.hora_cita = data.hora_cita;
+      if (data.tipo_cita !== undefined) workingPayload.tipo_cita = data.tipo_cita;
+      if (data.motivo_consulta !== undefined) workingPayload.motivo_consulta = data.motivo_consulta || null;
+      if (data.observaciones !== undefined) workingPayload.observaciones = data.observaciones || null;
+      if (data.seguro_cita !== undefined) workingPayload.seguro_cita = data.seguro_cita;
+      if (data.triaje_completado !== undefined) workingPayload.triaje_completado = data.triaje_completado;
+      if (data.atencion_completada !== undefined) workingPayload.atencion_completada = data.atencion_completada;
+
+      let lastErr: any = null;
+      for (let attempt = 0; attempt < 12; attempt++) {
+        if (Object.keys(workingPayload).length === 0) return { ok: true };
+        const { error } = await client.from('cv_citas').update(workingPayload).eq('id', id);
+        if (!error) return { ok: true };
+
+        lastErr = error;
+        const rlsCheck = formatSupabaseWriteError('cv_citas', error, '');
+        if (rlsCheck.isRls) return { ok: false, error: rlsCheck.message };
+
+        const missingCol = extractMissingSchemaColumn(error);
+        if (missingCol && missingCol in workingPayload) {
+          if (missingCol === 'profesional_id' && !('medico_id' in workingPayload)) {
+            workingPayload.medico_id = workingPayload.profesional_id;
+          }
+          delete workingPayload[missingCol];
+          continue;
+        }
+
+        const combined = `${String(error?.message || '')} ${String(error?.details || '')}`.toLowerCase();
+        if ('consultorio_id' in workingPayload && (!isUuid(String(workingPayload.consultorio_id)) || combined.includes('consultorio'))) {
+          delete workingPayload.consultorio_id;
+          continue;
+        }
+
+        break;
+      }
+
+      console.warn('Error actualizando cita en Supabase:', lastErr);
+      return {
+        ok: false,
+        error: formatSupabaseWriteError('cv_citas', lastErr, 'No se pudo actualizar la cita en Supabase.').message,
+      };
+    } catch (err: any) {
       console.warn('Error actualizando cita en Supabase:', err);
-      return false;
+      return {
+        ok: false,
+        error: formatSupabaseWriteError('cv_citas', err, 'Error al actualizar cita en Supabase.').message,
+      };
     }
   },
 

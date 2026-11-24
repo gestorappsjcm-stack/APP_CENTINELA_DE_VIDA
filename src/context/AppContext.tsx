@@ -122,6 +122,7 @@ interface AppContextType {
   // Citas
   citas: Cita[];
   addCita: (cita: Omit<Cita, 'id'>) => { success: boolean; cita?: Cita; error?: string };
+  updateCita: (id: string, data: Partial<Cita>) => Promise<{ success: boolean; error?: string }>;
   confirmarCita: (id: string) => void;
   cancelarCita: (id: string, motivo?: string) => void;
   llamarTurno: (citaId: string, consultorioId?: string) => void;
@@ -1446,16 +1447,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addCita = (cita: Omit<Cita, 'id'>) => {
     const correlativo = String(citas.length + 1).padStart(4, '0');
     const anio = new Date().getFullYear();
+    const generatedId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `cita-${Date.now()}`;
+
     const newCita: Cita = {
       ...cita,
-      id: `cita-${Date.now()}`,
+      id: generatedId,
       numero_ticket: cita.numero_ticket || `TKT-${anio}-${correlativo}`,
     };
     setCitas((prev) => [...prev, newCita]);
     if (isSupabaseConfigured()) {
-      supabaseService.insertCita(newCita).catch((e) => console.warn('Supabase insertCita error:', e));
+      supabaseService
+        .insertCita(newCita)
+        .then((res) => {
+          if (res.ok && res.id && res.id !== generatedId) {
+            setCitas((prev) =>
+              prev.map((c) => (c.id === generatedId ? { ...c, id: res.id! } : c))
+            );
+          }
+        })
+        .catch((e) => console.warn('Supabase insertCita error:', e));
     }
     return { success: true, cita: newCita };
+  };
+
+  const updateCita = async (
+    id: string,
+    data: Partial<Cita>
+  ): Promise<{ success: boolean; error?: string }> => {
+    setCitas((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
+    if (isSupabaseConfigured()) {
+      const res = await supabaseService.updateCita(id, data);
+      if (!res.ok) {
+        return { success: false, error: res.error };
+      }
+    }
+    return { success: true };
   };
 
   const confirmarCita = (id: string) => {
@@ -1629,8 +1658,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const citaAnterior = citas.find((c) => c.id === data.cita_id);
       const pacActual = pacientes.find((p) => p.id === data.paciente_id);
       const fechaLimpia = String(data.proxima_cita_fecha).split('T')[0].split(' ')[0];
+      const controlId =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `cita-${Date.now() + 5}`;
       const nuevaCitaControl: Cita = {
-        id: `cita-${Date.now() + 5}`,
+        id: controlId,
         paciente_id: data.paciente_id,
         profesional_id: data.profesional_id || citaAnterior?.profesional_id,
         consultorio_id: data.consultorio_id || citaAnterior?.consultorio_id,
@@ -1644,7 +1677,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       setCitas((prev) => [...prev, nuevaCitaControl]);
       if (isSupabaseConfigured()) {
-        supabaseService.insertCita(nuevaCitaControl).catch((e) => console.warn('Supabase insertCita control error:', e));
+        supabaseService
+          .insertCita(nuevaCitaControl)
+          .then((res) => {
+            if (res.ok && res.id && res.id !== controlId) {
+              setCitas((prev) =>
+                prev.map((c) => (c.id === controlId ? { ...c, id: res.id! } : c))
+              );
+            }
+          })
+          .catch((e) => console.warn('Supabase insertCita control error:', e));
       }
     }
 
@@ -1923,6 +1965,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         limpiarTurnosMes,
         citas,
         addCita,
+        updateCita,
         confirmarCita,
         cancelarCita,
         llamarTurno,
