@@ -1,5 +1,5 @@
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
-import { Paciente, Cita, Triaje, AtencionClinica, Profesional, Usuario, FUA } from '../types';
+import { AsignacionTurnoDia, Paciente, Cita, Triaje, AtencionClinica, Profesional, Usuario, FUA } from '../types';
 import { parseMedicamentosList } from '../lib/medicamentosHelper';
 import {
   calcularEdadDesdeFecha,
@@ -1493,5 +1493,56 @@ export const supabaseService = {
       console.warn('Error al obtener pac_procedimientos de Supabase:', err);
     }
     return null;
+  },
+
+  // 11. PROGRAMACION DE TURNOS POR FECHA (cv_configuracion)
+  async getTurnosProgramados(): Promise<AsignacionTurnoDia[] | null> {
+    const client = getSupabase();
+    if (!client) return null;
+    try {
+      const { data, error } = await client
+        .from('cv_configuracion')
+        .select('*')
+        .eq('clave', 'programacion_turnos_mensual')
+        .maybeSingle();
+
+      if (!error && data) {
+        const raw = data.valor ?? data.valor_json ?? data.datos;
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (Array.isArray(parsed)) {
+          return parsed as AsignacionTurnoDia[];
+        }
+      }
+    } catch (err) {
+      console.warn('No se pudo leer programación de turnos desde cv_configuracion:', err);
+    }
+    return null;
+  },
+
+  async saveTurnosProgramados(turnos: AsignacionTurnoDia[]): Promise<boolean> {
+    const client = getSupabase();
+    if (!client) return false;
+    try {
+      const serialized = JSON.stringify(turnos);
+      const { error } = await client
+        .from('cv_configuracion')
+        .upsert(
+          [{ clave: 'programacion_turnos_mensual', valor: serialized }],
+          { onConflict: 'clave' }
+        );
+      if (!error) return true;
+
+      // Fallback si la columna es valor_json o datos
+      const { error: err2 } = await client
+        .from('cv_configuracion')
+        .upsert(
+          [{ clave: 'programacion_turnos_mensual', valor_json: turnos }],
+          { onConflict: 'clave' }
+        );
+      return !err2;
+    } catch (err) {
+      console.warn('No se pudo guardar programación de turnos en cv_configuracion:', err);
+      return false;
+    }
   },
 };

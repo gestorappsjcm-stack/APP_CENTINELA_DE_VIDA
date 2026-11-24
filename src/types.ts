@@ -228,6 +228,21 @@ export interface Consultorio {
   color?: string;
 }
 
+export type TipoSlotTurno = 'MAÑANA' | 'TARDE' | 'AUSENCIA';
+
+export type CodigoTurnoRol = 'M' | 'T' | 'MT' | 'L' | 'D' | 'V' | 'F';
+
+export interface AsignacionTurnoDia {
+  id: string;
+  fecha: string; // YYYY-MM-DD
+  consultorio_id: string;
+  turno: TipoSlotTurno;
+  profesional_id: string;
+  profesional_nombre?: string;
+  codigo_rol?: CodigoTurnoRol;
+  observacion?: string;
+}
+
 export interface DatosProgramacionMes {
   mesNumero: number;
   mesNombre: string;

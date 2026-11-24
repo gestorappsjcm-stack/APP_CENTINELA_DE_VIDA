@@ -11,6 +11,8 @@ import {
   DatosProgramacionMes,
   FUA,
   FuaConfig,
+  AsignacionTurnoDia,
+  CodigoTurnoRol,
 } from '../types';
 import {
   INITIAL_USUARIOS,
@@ -34,6 +36,11 @@ import {
   normalizarDocumento,
   normalizarHcl,
 } from '../lib/pacientesHelper';
+import {
+  aplicarCodigoTurnoProfesional,
+  asignarSlotConsultorioFecha,
+  getTodayIso,
+} from '../lib/turnosHelper';
 
 interface AppContextType {
   // Autenticación y permisos
@@ -89,10 +96,28 @@ interface AppContextType {
   deleteProfesional: (id: string) => void;
   deleteAllProfesionales: () => Promise<{ success: boolean; error?: string }>;
 
-  // Consultorios
+  // Consultorios y Programación de Turnos por Fecha
   consultorios: Consultorio[];
   updateConsultorio: (id: string, data: Partial<Consultorio>) => void;
   asignarProfesionalAConsultorio: (consultorioId: string, turno: 'MAÑANA' | 'TARDE', profesionalId: string) => void;
+  turnosProgramados: AsignacionTurnoDia[];
+  asignarTurnoConsultorioFecha: (
+    fecha: string,
+    consultorioId: string,
+    turno: 'MAÑANA' | 'TARDE',
+    profesionalId: string
+  ) => void;
+  aplicarTurnoProfesionalFecha: (
+    fecha: string,
+    profesionalId: string,
+    consultorioId: string,
+    codigo: CodigoTurnoRol | ''
+  ) => void;
+  importarTurnosMasivo: (
+    nuevosTurnos: AsignacionTurnoDia[],
+    opciones?: { reemplazarMes?: { anio: number; mes: number } }
+  ) => void;
+  limpiarTurnosMes: (anio: number, mes: number) => void;
 
   // Citas
   citas: Cita[];
@@ -441,6 +466,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return INITIAL_CONSULTORIOS;
   });
 
+  const [turnosProgramados, setTurnosProgramados] = useState<AsignacionTurnoDia[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_turnos_programados`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      } catch (e) {
+        console.warn('Error parseando turnos programados:', e);
+      }
+    }
+    return [];
+  });
+
   const [citas, setCitas] = useState<Cita[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_citas`);
     if (saved) {
@@ -567,6 +607,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         supaFuas,
         supaDiagnosticos,
         supaProcedimientos,
+        supaTurnosProgramados,
       ] = await Promise.all([
         supabaseService.getDashboardResumen(),
         supabaseService.getPacientes(),
@@ -578,6 +619,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         supabaseService.getFuas(),
         supabaseService.getDiagnosticosPsico(),
         supabaseService.getProcedimientos(),
+        supabaseService.getTurnosProgramados(),
       ]);
 
       if (liveStats) {
@@ -609,6 +651,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       if (Array.isArray(supaProcedimientos) && supaProcedimientos.length > 0) {
         setCatalogoProcedimientos(supaProcedimientos);
+      }
+      if (Array.isArray(supaTurnosProgramados)) {
+        setTurnosProgramados(supaTurnosProgramados);
       }
     } catch (err: any) {
       console.warn('Error durante sincronización con Supabase:', err);
@@ -658,6 +703,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY}_consultorios`, JSON.stringify(consultorios));
   }, [consultorios]);
+
+  useEffect(() => {
+    localStorage.setItem(`${LOCAL_STORAGE_KEY}_turnos_programados`, JSON.stringify(turnosProgramados));
+  }, [turnosProgramados]);
 
   // Cambio rápido de usuario (exclusivo para sesión de desarrollador)
   const setCurrentUser = (user: Usuario) => {
@@ -1179,28 +1228,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
 
-  // Sincronizar automáticamente Consultorios con los Profesionales asignados
+  // Sincronizar automáticamente Consultorios con los Turnos de HOY (prioritario) y Profesionales base
   useEffect(() => {
+    const todayIso = getTodayIso();
     setConsultorios((prev) => {
       let changed = false;
       const next = prev.map((c) => {
+        const turnoHoyManana = turnosProgramados.find(
+          (t) =>
+            t.fecha === todayIso &&
+            (t.consultorio_id === c.id || t.consultorio_id === c.codigo) &&
+            t.turno === 'MAÑANA'
+        );
+        const turnoHoyTarde = turnosProgramados.find(
+          (t) =>
+            t.fecha === todayIso &&
+            (t.consultorio_id === c.id || t.consultorio_id === c.codigo) &&
+            t.turno === 'TARDE'
+        );
+
         const asignados = profesionales.filter(
           (p) =>
             p.estado === 'ACTIVO' &&
             p.consultorioAsignado &&
             (p.consultorioAsignado === c.id || p.consultorioAsignado === c.codigo)
         );
-        const profManana = asignados.find(
+        const profBaseManana = asignados.find(
           (p) => !p.turnoHabitual || p.turnoHabitual === 'MAÑANA' || p.turnoHabitual === 'ROTATIVO'
         );
-        const profTarde =
+        const profBaseTarde =
           asignados.find((p) => p.turnoHabitual === 'TARDE') ||
           asignados.find((p) => p.turnoHabitual === 'ROTATIVO');
 
-        const nextMananaId = profManana?.id;
-        const nextMananaNombre = profManana?.apellidos_nombres;
-        const nextTardeId = profTarde?.id;
-        const nextTardeNombre = profTarde?.apellidos_nombres;
+        const profHoyManana = turnoHoyManana
+          ? profesionales.find((p) => p.id === turnoHoyManana.profesional_id && p.estado === 'ACTIVO')
+          : undefined;
+        const profHoyTarde = turnoHoyTarde
+          ? profesionales.find((p) => p.id === turnoHoyTarde.profesional_id && p.estado === 'ACTIVO')
+          : undefined;
+
+        const nextMananaId = profHoyManana?.id || turnoHoyManana?.profesional_id || profBaseManana?.id;
+        const nextMananaNombre =
+          profHoyManana?.apellidos_nombres ||
+          turnoHoyManana?.profesional_nombre ||
+          profBaseManana?.apellidos_nombres;
+        const nextTardeId = profHoyTarde?.id || turnoHoyTarde?.profesional_id || profBaseTarde?.id;
+        const nextTardeNombre =
+          profHoyTarde?.apellidos_nombres ||
+          turnoHoyTarde?.profesional_nombre ||
+          profBaseTarde?.apellidos_nombres;
 
         if (
           c.profesional_id !== nextMananaId ||
@@ -1221,7 +1297,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       return changed ? next : prev;
     });
-  }, [profesionales]);
+  }, [profesionales, turnosProgramados]);
 
   // CONSULTORIOS
   const updateConsultorio = (id: string, data: Partial<Consultorio>) => {
@@ -1269,6 +1345,101 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return p;
       })
     );
+  };
+
+  const persistirTurnos = (nextTurnos: AsignacionTurnoDia[]) => {
+    if (isSupabaseConfigured()) {
+      supabaseService.saveTurnosProgramados(nextTurnos).catch(() => {});
+    }
+  };
+
+  const asignarTurnoConsultorioFecha = (
+    fecha: string,
+    consultorioId: string,
+    turno: 'MAÑANA' | 'TARDE',
+    profesionalId: string
+  ) => {
+    const prof = profesionales.find((p) => p.id === profesionalId);
+    setTurnosProgramados((prev) => {
+      const next = asignarSlotConsultorioFecha({
+        turnos: prev,
+        fecha,
+        consultorioId,
+        turno,
+        profesionalId,
+        profesionalNombre: prof?.apellidos_nombres,
+      });
+      persistirTurnos(next);
+      return next;
+    });
+  };
+
+  const aplicarTurnoProfesionalFecha = (
+    fecha: string,
+    profesionalId: string,
+    consultorioId: string,
+    codigo: CodigoTurnoRol | ''
+  ) => {
+    const prof = profesionales.find((p) => p.id === profesionalId);
+    setTurnosProgramados((prev) => {
+      const next = aplicarCodigoTurnoProfesional({
+        turnos: prev,
+        fecha,
+        profesionalId,
+        profesionalNombre: prof?.apellidos_nombres,
+        consultorioId,
+        codigo,
+      });
+      persistirTurnos(next);
+      return next;
+    });
+  };
+
+  const importarTurnosMasivo = (
+    nuevosTurnos: AsignacionTurnoDia[],
+    opciones?: { reemplazarMes?: { anio: number; mes: number } }
+  ) => {
+    setTurnosProgramados((prev) => {
+      let base = prev;
+      if (opciones?.reemplazarMes) {
+        const prefix = `${opciones.reemplazarMes.anio}-${String(opciones.reemplazarMes.mes).padStart(2, '0')}-`;
+        base = base.filter((t) => !t.fecha.startsWith(prefix));
+      } else {
+        const incomingKeys = new Set(
+          nuevosTurnos.map((t) =>
+            t.turno === 'AUSENCIA'
+              ? `aus__${t.fecha}__${t.profesional_id}`
+              : `${t.fecha}__${t.consultorio_id}__${t.turno}`
+          )
+        );
+        const incomingProfDays = new Set(
+          nuevosTurnos.map((t) => `${t.fecha}__${t.profesional_id}`)
+        );
+        base = base.filter((t) => {
+          const slotKey =
+            t.turno === 'AUSENCIA'
+              ? `aus__${t.fecha}__${t.profesional_id}`
+              : `${t.fecha}__${t.consultorio_id}__${t.turno}`;
+          if (incomingKeys.has(slotKey)) return false;
+          if (t.turno === 'AUSENCIA' && incomingProfDays.has(`${t.fecha}__${t.profesional_id}`)) {
+            return false;
+          }
+          return true;
+        });
+      }
+      const next = [...base, ...nuevosTurnos];
+      persistirTurnos(next);
+      return next;
+    });
+  };
+
+  const limpiarTurnosMes = (anio: number, mes: number) => {
+    const prefix = `${anio}-${String(mes).padStart(2, '0')}-`;
+    setTurnosProgramados((prev) => {
+      const next = prev.filter((t) => !t.fecha.startsWith(prefix));
+      persistirTurnos(next);
+      return next;
+    });
   };
 
   // CITAS
@@ -1745,6 +1916,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         consultorios,
         updateConsultorio,
         asignarProfesionalAConsultorio,
+        turnosProgramados,
+        asignarTurnoConsultorioFecha,
+        aplicarTurnoProfesionalFecha,
+        importarTurnosMasivo,
+        limpiarTurnosMes,
         citas,
         addCita,
         confirmarCita,
