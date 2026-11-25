@@ -136,7 +136,7 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
   const [observacionesPdf, setObservacionesPdf] = useState<string>('');
   const [targetAnio, setTargetAnio] = useState<number>(anioActual);
   const [targetMes, setTargetMes] = useState<number>(mesActual);
-  const [reemplazarMes, setReemplazarMes] = useState<boolean>(false);
+  const [reemplazarMes, setReemplazarMes] = useState<boolean>(true);
   const [omitirTurnosDomingo, setOmitirTurnosDomingo] = useState<boolean>(true);
   const [filas, setFilas] = useState<FilaRevisionPdf[]>([]);
 
@@ -261,6 +261,7 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
       }
 
       const usadosPsicoIds = new Set<string>();
+      const assignedProfIds = new Set<string>();
       const mappedFilas: FilaRevisionPdf[] = detectados.map((item, idx) => {
         const profMatch = matchProfesionalPorNombreODni(
           item.nombrePdf,
@@ -268,11 +269,15 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
           item.profesionalIdSugerido,
           profesionalesActivos
         );
-        const prefConsId = profMatch ? consultoriosDefaultProf[profMatch.id] : undefined;
+        const profIdUnico = profMatch && !assignedProfIds.has(profMatch.id) ? profMatch.id : '';
+        if (profIdUnico) assignedProfIds.add(profIdUnico);
+        const profFinal = profIdUnico ? profMatch : undefined;
+
+        const prefConsId = profFinal ? consultoriosDefaultProf[profFinal.id] : undefined;
         const profConDefault =
-          profMatch && prefConsId
-            ? { ...profMatch, consultorioAsignado: prefConsId }
-            : profMatch;
+          profFinal && prefConsId
+            ? { ...profFinal, consultorioAsignado: prefConsId }
+            : profFinal;
         const consMatch = matchConsultorioPorCodigoONombre(
           item.consultorioCodigoSugerido,
           profConDefault,
@@ -286,10 +291,10 @@ export const ModalImportarRolPdf: React.FC<ModalImportarRolPdfProps> = ({
 
         return {
           key: `row-${idx}-${item.nombrePdf}`,
-          incluir: Boolean(profMatch),
+          incluir: Boolean(profIdUnico),
           nombrePdf: item.nombrePdf,
           dniPdf: item.dniPdf,
-          profesionalId: profMatch?.id || '',
+          profesionalId: profIdUnico,
           consultorioId: consMatch?.id || consultorios[0]?.id || '',
           turnos: turnosLimpios,
         };

@@ -37,6 +37,7 @@ interface FilaRevisionExcel {
   incluir: boolean;
   nombreExcel: string;
   dniExcel?: string;
+  horasExcel?: string;
   profesionalId: string;
   consultorioId: string;
   turnos: TurnoExcelItem[];
@@ -109,14 +110,30 @@ const esTextoPieORegla = (textoNorm: string): boolean => {
     'DIRECTOR',
     'JEFE DE PERSONAL',
     'JEFE DEL EE SS',
+    'JEFE DEL EESS',
     'AREA DE CONTROL',
+    'M TURNO MANANA',
+    'T TURNO TARDE',
+    'M T TURNO MANANA',
+    'MT TURNO MANANA',
+    'N TURNO NOCHE',
+    'H ROTACION HOSPITAL',
     'TURNO MANANA',
     'TURNO TARDE',
     'TURNO NOCHE',
     'ROTACION HOSPITAL',
     'TOTAL HORAS',
+    'TOTAL',
+    'SUBTOTAL',
+    'RESUMEN',
+    'VACACIONES',
+    'LICENCIA',
     'LEYENDA',
     'OBSERVACIONES',
+    'ELABORADO',
+    'REVISADO',
+    'APROBADO',
+    'FIRMA',
   ];
   return bloqueados.some((b) => textoNorm.startsWith(b) || textoNorm === b);
 };
@@ -153,7 +170,7 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
   const [infoResumen, setInfoResumen] = useState<string>('');
   const [targetAnio, setTargetAnio] = useState<number>(anioActual);
   const [targetMes, setTargetMes] = useState<number>(mesActual);
-  const [reemplazarMes, setReemplazarMes] = useState<boolean>(false);
+  const [reemplazarMes, setReemplazarMes] = useState<boolean>(true);
   const [omitirTurnosDomingo, setOmitirTurnosDomingo] = useState<boolean>(true);
   const [filas, setFilas] = useState<FilaRevisionExcel[]>([]);
 
@@ -192,33 +209,58 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
       return;
     }
 
-    const rawRows = XLSX.utils.sheet_to_json<any[]>(ws, {
-      header: 1,
-      defval: '',
-      raw: true,
-    });
+    const refStr = ws['!ref'];
+    if (!refStr) {
+      setErrorMsg('La hoja seleccionada no contiene celdas con datos para importar.');
+      return;
+    }
 
-    if (!rawRows || rawRows.length < 2) {
+    const sheetRange = XLSX.utils.decode_range(refStr);
+    const maxRow = sheetRange.e.r;
+    const maxCol = sheetRange.e.c;
+    if (maxRow < 1 || maxCol < 2) {
       setErrorMsg('La hoja seleccionada no contiene datos suficientes para importar.');
       return;
     }
 
-    // Copiar matriz para expandir merges sin mutar el objeto original
-    const grid: string[][] = rawRows.map((row) =>
-      Array.isArray(row) ? row.map((cell) => String(cell ?? '').trim()) : []
+    // Construir matriz indexada exactamente desde A1 (r=0, c=0) para coincidir 1:1 con ws['!merges']
+    const grid: string[][] = Array.from({ length: maxRow + 1 }, () =>
+      Array.from({ length: maxCol + 1 }, () => '')
     );
+    for (let r = sheetRange.s.r; r <= maxRow; r++) {
+      for (let c = sheetRange.s.c; c <= maxCol; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r, c })];
+        if (!cell) continue;
+        const formatted = cell.w != null ? String(cell.w).trim() : '';
+        if (
+          formatted &&
+          (cell.t === 'd' || (cell.t === 'n' && /^0?[1-9]$|^[12][0-9]$|^3[01]$/.test(formatted)))
+        ) {
+          grid[r][c] = formatted;
+        } else {
+          grid[r][c] = String(cell.v ?? cell.w ?? '').trim();
+        }
+      }
+    }
 
-    // 1. Detectar fila encabezado con columnas numéricas 1..31
+    const rowMeta = Array.isArray(ws['!rows']) ? ws['!rows'] : [];
+    const colMeta = Array.isArray(ws['!cols']) ? ws['!cols'] : [];
+    const isRowHidden = (r: number) => Boolean(rowMeta[r]?.hidden);
+    const isColHidden = (c: number) => Boolean(colMeta[c]?.hidden);
+
+    // 1. Detectar fila encabezado con columnas numéricas 1..31 (ignorando filas/columnas ocultas)
     let headerRowIdx = -1;
     let bestDayColMap = new Map<number, number>(); // colIdx -> dia (1..31)
 
     const maxHeaderScan = Math.min(grid.length, 30);
     for (let r = 0; r < maxHeaderScan; r++) {
+      if (isRowHidden(r)) continue;
       const row = grid[r];
       const tempMap = new Map<number, number>();
       let lastDay = 0;
 
       for (let c = 0; c < row.length; c++) {
+        if (isColHidden(c)) continue;
         const cell = row[c].trim();
         if (/^0?[1-9]$|^[12][0-9]$|^3[01]$/.test(cell)) {
           const dayNum = Number(cell);
@@ -234,7 +276,12 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
         }
       }
 
-      if (tempMap.size >= 12 && tempMap.size > bestDayColMap.size) {
+      const firstDetectedDay = tempMap.size > 0 ? Array.from(tempMap.values())[0] : 0;
+      if (
+        tempMap.size >= 15 &&
+        firstDetectedDay <= 2 &&
+        tempMap.size > bestDayColMap.size
+      ) {
         bestDayColMap = tempMap;
         headerRowIdx = r;
       }
@@ -257,13 +304,21 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
       if (m.e.r <= headerRowIdx) continue;
       if (m.e.c < minDayCol || m.s.c > maxDayCol) continue;
 
-      const anchorVal = String(grid[m.s.r]?.[m.s.c] ?? '').trim();
-      if (!anchorVal) continue;
-
       const startR = Math.max(m.s.r, headerRowIdx + 1);
       const endR = Math.min(m.e.r, grid.length - 1);
       const startC = Math.max(m.s.c, minDayCol);
       const endC = Math.min(m.e.c, maxDayCol);
+
+      let anchorVal = String(grid[m.s.r]?.[m.s.c] ?? '').trim();
+      if (!anchorVal) {
+        for (let rr = m.s.r; rr <= endR && !anchorVal; rr++) {
+          for (let cc = m.s.c; cc <= Math.min(m.e.c, maxCol) && !anchorVal; cc++) {
+            const candidate = String(grid[rr]?.[cc] ?? '').trim();
+            if (candidate) anchorVal = candidate;
+          }
+        }
+      }
+      if (!anchorVal) continue;
 
       for (let rr = startR; rr <= endR; rr++) {
         if (!grid[rr]) continue;
@@ -297,16 +352,17 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
     setTargetMes(detectedMes);
     setTargetAnio(detectedAnio);
 
-    // 4. Ubicar columnas de Nombre, DNI y Consultorio
+    // 4. Ubicar columnas de Nombre, DNI, Consultorio y Horas
     let nameCol = -1;
     let dniCol = -1;
     let consultorioCol = -1;
+    let horasCol = -1;
 
     const headerSearchStart = Math.max(0, headerRowIdx - 2);
     for (let r = headerSearchStart; r <= headerRowIdx; r++) {
       const row = grid[r] || [];
       for (let c = 0; c < row.length; c++) {
-        if (bestDayColMap.has(c)) continue;
+        if (bestDayColMap.has(c) || isColHidden(c)) continue;
         const hNorm = normalizarTextoComparacion(row[c]);
         if (!hNorm) continue;
 
@@ -335,6 +391,9 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
         ) {
           consultorioCol = c;
         }
+        if (horasCol === -1 && c > maxDayCol && (hNorm === 'HORAS' || hNorm.includes('TOTAL HORAS'))) {
+          horasCol = c;
+        }
       }
     }
 
@@ -342,8 +401,10 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
     if (nameCol === -1) {
       let bestScore = 0;
       for (let c = 0; c < minDayCol; c++) {
+        if (isColHidden(c)) continue;
         let score = 0;
         for (let r = headerRowIdx + 1; r < grid.length; r++) {
+          if (isRowHidden(r)) continue;
           const val = (grid[r]?.[c] || '').trim();
           if (val.length >= 6 && /[A-Za-zÁÉÍÓÚÑáéíóúñ]{3,}/.test(val) && !/^\d+$/.test(val)) {
             score++;
@@ -361,10 +422,12 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
       return;
     }
 
-    // 5. Leer filas de profesionales y sus turnos
+    // 5. Leer filas visibles de profesionales y sus turnos
     const usadosPsicoIds = new Set<string>();
+    const assignedProfIds = new Set<string>();
     const parsedFilas: FilaRevisionExcel[] = [];
     for (let r = headerRowIdx + 1; r < grid.length; r++) {
+      if (isRowHidden(r)) continue;
       const row = grid[r] || [];
       const nombreRaw = (row[nameCol] || '').trim();
       const nombreNorm = normalizarTextoComparacion(nombreRaw);
@@ -374,6 +437,7 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
 
       const dniRaw = dniCol >= 0 ? (row[dniCol] || '').trim() : '';
       const consRaw = consultorioCol >= 0 ? (row[consultorioCol] || '').trim() : '';
+      const horasRaw = horasCol >= 0 ? (row[horasCol] || '').trim() : '';
 
       const turnosFila: TurnoExcelItem[] = [];
       for (const [colIdx, dia] of bestDayColMap.entries()) {
@@ -398,11 +462,15 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
         undefined,
         profesionalesActivos
       );
-      const prefConsId = profMatch ? consultoriosDefaultProf[profMatch.id] : undefined;
+      const profIdUnico = profMatch && !assignedProfIds.has(profMatch.id) ? profMatch.id : '';
+      if (profIdUnico) assignedProfIds.add(profIdUnico);
+      const profFinal = profIdUnico ? profMatch : undefined;
+
+      const prefConsId = profFinal ? consultoriosDefaultProf[profFinal.id] : undefined;
       const profConDefault =
-        profMatch && prefConsId
-          ? { ...profMatch, consultorioAsignado: prefConsId }
-          : profMatch;
+        profFinal && prefConsId
+          ? { ...profFinal, consultorioAsignado: prefConsId }
+          : profFinal;
       const consMatch = matchConsultorioPorCodigoONombre(
         consRaw,
         profConDefault,
@@ -412,10 +480,11 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
 
       parsedFilas.push({
         key: `xlsx-${r}-${nombreRaw}`,
-        incluir: Boolean(profMatch),
+        incluir: Boolean(profIdUnico),
         nombreExcel: nombreRaw,
         dniExcel: dniRaw || undefined,
-        profesionalId: profMatch?.id || '',
+        horasExcel: horasRaw || undefined,
+        profesionalId: profIdUnico,
         consultorioId: consMatch?.id || consultorios[0]?.id || '',
         turnos: turnosFila,
       });
@@ -857,11 +926,31 @@ export const ModalImportarRolExcel: React.FC<ModalImportarRolExcelProps> = ({
                               <div className="font-bold text-slate-900 dark:text-white">
                                 {fila.nombreExcel}
                               </div>
-                              {fila.dniExcel && (
-                                <div className="text-[10px] font-mono text-slate-500">
-                                  Doc: {fila.dniExcel}
-                                </div>
-                              )}
+                              <div className="text-[10px] font-mono text-slate-500 flex flex-wrap gap-1.5 mt-0.5">
+                                {fila.dniExcel && <span>Doc: {fila.dniExcel}</span>}
+                                {(() => {
+                                  const horasCalc = fila.turnos.reduce((acc, t) => {
+                                    const esDom = getDayOfWeekIndex(targetAnio, targetMes, t.dia) === 0;
+                                    if (
+                                      omitirTurnosDomingo &&
+                                      esDom &&
+                                      (t.codigo === 'M' || t.codigo === 'T' || t.codigo === 'MT')
+                                    ) {
+                                      return acc;
+                                    }
+                                    if (t.codigo === 'MT') return acc + 12;
+                                    if (t.codigo === 'M' || t.codigo === 'T') return acc + 6;
+                                    return acc;
+                                  }, 0);
+                                  const vacCount = fila.turnos.filter((t) => t.codigo === 'V').length;
+                                  return (
+                                    <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
+                                      {horasCalc}h{fila.horasExcel ? ` (Excel: ${fila.horasExcel}h)` : ''}
+                                      {vacCount > 0 ? ` • ${vacCount}d Vac/Lic` : ''}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
                             </td>
                             <td className="py-2.5 px-3">
                               <select

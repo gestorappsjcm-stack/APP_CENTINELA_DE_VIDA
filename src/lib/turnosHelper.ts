@@ -286,9 +286,30 @@ export const matchProfesionalPorNombreODni = (
   sugeridoId: string | undefined,
   profesionales: Profesional[]
 ): Profesional | undefined => {
+  const target = normalizarTextoComparacion(nombrePdf);
+  const targetPhonetic = simplificarFonetica(target);
+  const targetJoined = targetPhonetic.replace(/\s+/g, '');
+  const targetTokens = targetPhonetic.split(' ').filter((t) => t.length >= 2);
+
   if (sugeridoId) {
     const exactById = profesionales.find((p) => p.id === sugeridoId);
-    if (exactById) return exactById;
+    if (exactById) {
+      const profDni = (exactById.dni || '').replace(/\D/g, '');
+      const dniCleanCheck = (dniPdf || '').replace(/\D/g, '');
+      const profNorm = normalizarTextoComparacion(exactById.apellidos_nombres);
+      const profPhon = simplificarFonetica(profNorm);
+      const profToks = profPhon.split(' ').filter((t) => t.length >= 2);
+      const commonSug = targetTokens.filter((t) => profToks.includes(t));
+      const apellidoCoincide =
+        targetTokens.length === 0 ||
+        commonSug.length >= 2 ||
+        (dniCleanCheck && profDni === dniCleanCheck) ||
+        profNorm.includes(target) ||
+        target.includes(profNorm);
+      if (apellidoCoincide) {
+        return exactById;
+      }
+    }
   }
 
   const dniClean = (dniPdf || '').replace(/\D/g, '');
@@ -299,7 +320,6 @@ export const matchProfesionalPorNombreODni = (
     if (exactByDni) return exactByDni;
   }
 
-  const target = normalizarTextoComparacion(nombrePdf);
   if (!target) return undefined;
 
   const exactByName = profesionales.find(
@@ -307,9 +327,6 @@ export const matchProfesionalPorNombreODni = (
   );
   if (exactByName) return exactByName;
 
-  const targetPhonetic = simplificarFonetica(target);
-  const targetJoined = targetPhonetic.replace(/\s+/g, '');
-  const targetTokens = targetPhonetic.split(' ').filter((t) => t.length >= 2);
   if (targetTokens.length === 0) return undefined;
 
   let bestMatch: Profesional | undefined;

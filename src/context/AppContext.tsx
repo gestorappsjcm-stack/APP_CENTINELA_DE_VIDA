@@ -1392,12 +1392,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             t.turno === 'TARDE'
         );
 
-        const asignados = profesionales.filter(
-          (p) =>
-            p.estado === 'ACTIVO' &&
-            p.consultorioAsignado &&
-            (p.consultorioAsignado === c.id || p.consultorioAsignado === c.codigo)
+        const mesTodayPrefix = todayIso.slice(0, 7);
+        const tieneRolDelMesHoy = turnosProgramados.some((t) => t.fecha.startsWith(mesTodayPrefix));
+        const ausentesHoyIds = new Set(
+          turnosProgramados
+            .filter((t) => t.fecha === todayIso && t.turno === 'AUSENCIA')
+            .map((t) => t.profesional_id)
         );
+
+        const asignados = tieneRolDelMesHoy
+          ? []
+          : profesionales.filter(
+              (p) =>
+                p.estado === 'ACTIVO' &&
+                !ausentesHoyIds.has(p.id) &&
+                p.consultorioAsignado &&
+                (p.consultorioAsignado === c.id || p.consultorioAsignado === c.codigo)
+            );
         const profBaseManana = asignados.find(
           (p) => !p.turnoHabitual || p.turnoHabitual === 'MAÑANA' || p.turnoHabitual === 'ROTATIVO'
         );

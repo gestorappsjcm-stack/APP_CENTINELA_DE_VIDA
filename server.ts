@@ -158,22 +158,23 @@ app.post('/api/turnos/parse-pdf', async (req, res) => {
     const safeFileName = String(body.fileName || 'rol_turnos.pdf').slice(0, 120);
 
     const promptText = `Analiza visualmente este PDF de "Rol de Turnos / Rol de Trabajo" de un Centro de Salud Mental Comunitario (CSMC / MINSA Perú).
-Extrae todos los profesionales/personal que aparecen en el cuadro y sus turnos asignados día por día del mes (columnas 1 a 31).
+Extrae todos los profesionales/personal que aparecen en el cuadro y sus turnos REALES día por día del mes (columnas 1 a 31).
 
 Contexto de referencia (si el PDF no especifica año o mes, usa por defecto año=${anioDefault}, mes=${mesDefault}):
 Nombre archivo: ${safeFileName}
 
-Catálogo de profesionales registrados en el sistema (úsalos para llenar profesionalIdSugerido cuando coincida nombre o DNI):
+Catálogo de profesionales registrados en el sistema (llena profesionalIdSugerido SOLO si apellidos Y nombres coinciden inequívocamente; si solo coincide un apellido como "VENTURA", déjalo vacío ""):
 ${profesionalesResumen || '(sin catálogo previo)'}
 
 Catálogo de consultorios registrados (úsalos para llenar consultorioCodigoSugerido usando el campo "codigo"):
 ${consultoriosResumen || '(sin catálogo previo)'}
 
-Reglas críticas de lectura de tabla e interpretación:
-1. ALINEACIÓN VISUAL EXACTA: Lee la tabla respetando estrictamente la posición vertical de cada celda respecto a los encabezados numéricos 1..31. Las celdas en blanco (por ejemplo domingos o días libres sin letra) NO deben desplazar los días siguientes hacia la izquierda.
-2. IGNORAR COLUMNAS NO DIARIAS: No confundas la columna "Nº", "CARGO", "HORAS" (ej. 150, 78, 06, 00) ni "CONDICION LABORAL" con días o turnos.
-3. CELDAS COMBINADAS HORIZONTALMENTE: Si una fila tiene una barra o celda combinada horizontalmente (por ejemplo "VACACIONES", "VACACIONES 2026", "LICENCIA POR MATERNIDAD", "DESCANSO MEDICO"), identifica el primer día y el último día cubiertos visualmente por esa barra y genera un registro de turno para CADA día numérico dentro de ese rango con tipoTurno = "VACACIONES" y codigoOriginal exacto (ej. "VACACIONES 2026" o "LICENCIA POR MATERNIDAD").
-4. CÓDIGOS DE TURNO CSMC/MINSA:
+Reglas CRÍTICAS de lectura visual e interpretación (PROHIBIDO INVENTAR O ADIVINAR):
+1. ALINEACIÓN VISUAL EXACTA: Lee la tabla respetando estrictamente la posición vertical de cada celda respecto a los encabezados numéricos 1..31 y la fila superior de días (D, L, M, X/M, J, V, S). Las celdas vacías o columnas rojas de domingo NO deben desplazar las letras siguientes hacia la izquierda ni hacia la derecha.
+2. PROHIBIDO RELLENAR AL AZAR: Si una celda está visualmente en blanco y NO está cubierta por una barra horizontal de vacaciones/licencia, OMITE ese día por completo. NUNCA extrapoles, completes ni inventes turnos para igualar 150h ni para rellenar huecos.
+3. VERIFICACIÓN CON LA COLUMNA "HORAS": En las columnas de la derecha figura "HORAS" (ej. 150, 78, 06, 00). Cada M o T suma 6h, cada MT (M/T) suma 12h, cada N suma 12h, y las barras de VACACIONES / LICENCIA / L / D / F suman 0h. Verifica antes de emitir cada fila que la suma de horas de sus turnos extraídos coincida exactamente con su columna "HORAS" (por ejemplo, si HORAS = 78 solo puede haber 13 turnos de 6h + los días de la barra VACACIONES 2026). No incluyas el número de HORAS, N° ni CONDICION LABORAL como turnos.
+4. CELDAS O BARRAS COMBINADAS HORIZONTALMENTE: Si una fila tiene una barra de color o celda combinada horizontalmente (por ejemplo "VACACIONES", "VACACIONES 2026", "LICENCIA POR MATERNIDAD", "DESCANSO MEDICO"), identifica con precisión el primer día numérico y el último día numérico cubiertos visualmente por esa barra (donde empiezan y terminan sus bordes izquierdo y derecho respecto a los encabezados 1..31) y genera tipoTurno = "VACACIONES" con codigoOriginal exacto para CADA día dentro de ese rango, SIN poner M ni T en ninguno de esos días de vacaciones/licencia.
+5. CÓDIGOS DE TURNO CSMC/MINSA:
    - M, MAÑANA, AM, M1, M2, 08-14 -> tipoTurno = "MAÑANA"
    - T, TARDE, PM, T1, T2, 14-20 -> tipoTurno = "TARDE"
    - MT, M/T, M-T, M+T, MAÑANA Y TARDE, GD, G, 12H, 08-20 -> tipoTurno = "MAÑANA_TARDE"
@@ -181,8 +182,7 @@ Reglas críticas de lectura de tabla e interpretación:
    - F, FER, FERIADO -> tipoTurno = "FERIADO"
    - D, DESC, DESCANSO, DOM -> tipoTurno = "DESCANSO"
    - V, VAC, VACACIONES, LIC, LICENCIA, MATERNIDAD, PERM, DM -> tipoTurno = "VACACIONES"
-   - N, NOCHE, u otro código especial legible -> tipoTurno = "OTRO" (conserva codigoOriginal exacto, ej. "N")
-5. Omite días completamente vacíos o con "-" / sin programación para mantener el JSON compacto.`;
+   - N, NOCHE -> tipoTurno = "OTRO" (conserva codigoOriginal exacto, ej. "N")`;
 
     const buildRequestParams = (modelName: string) => ({
       model: modelName,
@@ -198,9 +198,9 @@ Reglas críticas de lectura de tabla e interpretación:
         ],
       },
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
         systemInstruction:
-          'Eres un asistente especializado en digitalizar cuadros visuales de Rol de Turnos asistenciales del sector salud peruano (MINSA/CSMC) con precisión exacta por fila (profesional) y columna (día del mes 1..31), incluyendo celdas combinadas de vacaciones o licencias. Devuelve siempre JSON válido siguiendo el esquema.',
+          'Eres un lector OCR tabular de alta precisión para cuadros de Rol de Turnos MINSA/CSMC. Extrae ÚNICAMENTE lo que está impreso en cada columna 1..31 y verifica la suma contra la columna HORAS. Nunca inventes ni completes celdas vacías al azar.',
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
