@@ -857,6 +857,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setCurrentUser = (user: Usuario) => {
     if (!isDeveloperMode) return;
     setCurrentUserState(user);
+    if (user.rol !== 'desarrollador' && currentTab === 'fua') {
+      setCurrentTab('dashboard');
+    }
     try {
       sessionStorage.setItem(`${LOCAL_STORAGE_KEY}_active_session`, JSON.stringify(user));
     } catch (e) {
@@ -929,8 +932,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsLoggedOut(true);
   };
 
-  // FUA (Formato Único de Atención SIS)
+  // FUA (Formato Único de Atención SIS — habilitado exclusivamente para Desarrollador)
   const addFUA = (data: Omit<FUA, 'id' | 'numero_fua' | 'fecha' | 'hora' | 'estado'>) => {
+    if (currentUser?.rol !== 'desarrollador') {
+      return {
+        success: false,
+        error: 'El módulo FUA está habilitado exclusivamente para el perfil Desarrollador.',
+      };
+    }
     const now = new Date();
     const fecha = now.toISOString().split('T')[0];
     const hora = now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
@@ -987,10 +996,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateFUA = (id: string, data: Partial<FUA>) => {
+    if (currentUser?.rol !== 'desarrollador') return;
     setFuas((prev) => prev.map((f) => (f.id === id ? { ...f, ...data } : f)));
   };
 
   const deleteFUA = (id: string) => {
+    if (currentUser?.rol !== 'desarrollador') return;
     setFuas((prev) => prev.filter((f) => f.id !== id));
   };
 
@@ -1006,6 +1017,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Verificar si el usuario actual tiene acceso al módulo
   const canAccess = (moduleId: ModuleId): boolean => {
     if (!currentUser) return false;
+
+    // El módulo FUA está deshabilitado para todos los perfiles excepto Desarrollador
+    if (moduleId === 'fua') {
+      return currentUser.rol === 'desarrollador';
+    }
+
     const isDev = isDeveloperMode || currentUser.rol === 'desarrollador';
     if (isDev) return true;
 
@@ -1915,6 +1932,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // USUARIOS (Persistidos en la tabla cv_usuarios de Supabase)
   const sanitizarPermisosPorRol = (rolDestino: Usuario['rol'], permisos: ModuleId[]): ModuleId[] => {
     return permisos.filter((m) => {
+      if (m === 'fua') return rolDestino === 'desarrollador';
       if (m === 'gestion_usuarios') return rolDestino === 'administrador' || rolDestino === 'desarrollador';
       return true;
     });

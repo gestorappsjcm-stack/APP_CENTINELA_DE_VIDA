@@ -1342,7 +1342,6 @@ export const supabaseService = {
                     'dashboard',
                     'pacientes',
                     'ficha_paciente',
-                    'fua',
                     'agenda',
                     'triaje',
                     'atencion',

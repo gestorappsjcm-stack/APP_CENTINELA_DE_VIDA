@@ -34,6 +34,7 @@ import { TicketAtencionModal } from '../modals/TicketAtencionModal';
 
 export const AgendaView: React.FC = () => {
   const {
+    currentUser,
     citas,
     pacientes,
     profesionales,
@@ -1255,15 +1256,16 @@ export const AgendaView: React.FC = () => {
                     </label>
                   </div>
 
-                  {citaSeguro === 'SIS' ? (
-                    <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
-                      ✓ Paciente con SIS activo: Habilitado para emisión de Formato Único de Atención (FUA).
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-amber-700 dark:text-amber-300 font-medium">
-                      ⚠️ Atención: Con seguro {citaSeguro} no se generará FUA (normativa MINSA exclusiva para afiliados SIS).
-                    </p>
-                  )}
+                  {currentUser?.rol === 'desarrollador' &&
+                    (citaSeguro === 'SIS' ? (
+                      <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
+                        ✓ Paciente con SIS activo: Habilitado para emisión de Formato Único de Atención (FUA).
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-amber-700 dark:text-amber-300 font-medium">
+                        ⚠️ Atención: Con seguro {citaSeguro} no se generará FUA (normativa MINSA exclusiva para afiliados SIS).
+                      </p>
+                    ))}
                 </div>
               )}
 

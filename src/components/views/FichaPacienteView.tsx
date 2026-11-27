@@ -28,6 +28,7 @@ import {
 
 export const FichaPacienteView: React.FC = () => {
   const {
+    currentUser,
     pacientes,
     selectedPacienteFichaId,
     setSelectedPacienteFichaId,
@@ -41,6 +42,7 @@ export const FichaPacienteView: React.FC = () => {
     setActiveModal,
   } = useApp();
 
+  const canUseFua = currentUser?.rol === 'desarrollador';
   const [searchTerm, setSearchTerm] = useState('');
   const [activeSubTab, setActiveSubTab] = useState<'resumen' | 'atenciones' | 'triajes' | 'recetas' | 'fua'>('resumen');
 
@@ -341,7 +343,9 @@ export const FichaPacienteView: React.FC = () => {
                   { id: 'atenciones', label: `Atenciones HC (${atencionesPaciente.length})`, icon: Activity },
                   { id: 'triajes', label: `Triajes (${triajesPaciente.length})`, icon: Stethoscope },
                   { id: 'recetas', label: 'Recetas / Fármacos', icon: Pill },
-                  { id: 'fua', label: `Formatos FUA (${fuasPaciente.length})`, icon: FileSpreadsheet },
+                  ...(canUseFua
+                    ? [{ id: 'fua', label: `Formatos FUA (${fuasPaciente.length})`, icon: FileSpreadsheet }]
+                    : []),
                 ].map((t) => {
                   const Icon = t.icon;
                   const isActive = activeSubTab === t.id;
@@ -632,8 +636,8 @@ export const FichaPacienteView: React.FC = () => {
                 </div>
               )}
 
-              {/* Sub-Pestaña: Formatos FUA */}
-              {activeSubTab === 'fua' && (
+              {/* Sub-Pestaña: Formatos FUA (exclusivo Desarrollador) */}
+              {canUseFua && activeSubTab === 'fua' && (
                 <div className="space-y-3">
                   {fuasPaciente.length === 0 ? (
                     <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl border border-slate-200 dark:border-slate-700 text-center space-y-3">

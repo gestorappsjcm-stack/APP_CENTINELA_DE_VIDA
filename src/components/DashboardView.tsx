@@ -189,7 +189,9 @@ export const DashboardView: React.FC = () => {
                 Bienvenido, {currentUser.nombres} {currentUser.apellidos}
               </h2>
               <p className="text-xs sm:text-sm text-teal-50/90 font-normal max-w-xl">
-                Plataforma Integral de Sistematización, Programación Anual y Gestión FUA
+                {currentUser.rol === 'desarrollador'
+                  ? 'Plataforma Integral de Sistematización, Programación Anual y Gestión FUA'
+                  : 'Plataforma Integral de Sistematización y Programación Anual'}
               </p>
             </div>
           </div>

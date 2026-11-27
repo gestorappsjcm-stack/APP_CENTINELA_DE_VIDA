@@ -40,7 +40,6 @@ export const INITIAL_USUARIOS: Usuario[] = [
       'dashboard',
       'pacientes',
       'ficha_paciente',
-      'fua',
       'agenda',
       'triaje',
       'atencion',

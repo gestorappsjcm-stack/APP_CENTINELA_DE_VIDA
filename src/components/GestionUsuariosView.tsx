@@ -186,6 +186,7 @@ export const GestionUsuariosView: React.FC = () => {
       setFormData((prev) => ({
         ...prev,
         permisosModulos: MODULOS_SISTEMA.filter((m) => {
+          if (m.id === 'fua') return false;
           if (m.id === 'gestion_usuarios' && prev.rol !== 'administrador') return false;
           return true;
         }).map((m) => m.id),
@@ -194,7 +195,7 @@ export const GestionUsuariosView: React.FC = () => {
       setFormData((prev) => ({
         ...prev,
         rol: 'medico',
-        permisosModulos: ['dashboard', 'pacientes', 'ficha_paciente', 'fua', 'agenda', 'atencion', 'programacion_anual', 'reportes'],
+        permisosModulos: ['dashboard', 'pacientes', 'ficha_paciente', 'agenda', 'atencion', 'programacion_anual', 'reportes'],
       }));
     } else if (preset === 'triaje') {
       setFormData((prev) => ({
@@ -206,7 +207,7 @@ export const GestionUsuariosView: React.FC = () => {
       setFormData((prev) => ({
         ...prev,
         rol: 'admision',
-        permisosModulos: ['dashboard', 'pacientes', 'ficha_paciente', 'agenda', 'programacion_turnos', 'display_turnos', 'fua'],
+        permisosModulos: ['dashboard', 'pacientes', 'ficha_paciente', 'agenda', 'programacion_turnos', 'display_turnos'],
       }));
     } else {
       setFormData((prev) => ({
@@ -449,38 +450,45 @@ export const GestionUsuariosView: React.FC = () => {
                 </div>
 
                 {/* Módulos Autorizados */}
-                <div>
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    <span className="flex items-center gap-1.5">
-                      <Lock size={12} className="text-teal-600" />
-                      Módulos Autorizados ({isAdmin ? 'Todos' : u.permisosModulos.length}):
-                    </span>
-                  </div>
+                {(() => {
+                  const visibleModulos = u.permisosModulos.filter(
+                    (id) => id !== 'fua' || u.rol === 'desarrollador'
+                  );
+                  return (
+                    <div>
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                        <span className="flex items-center gap-1.5">
+                          <Lock size={12} className="text-teal-600" />
+                          Módulos Autorizados ({isAdmin ? 'Operativos' : visibleModulos.length}):
+                        </span>
+                      </div>
 
-                  <div className="flex flex-wrap gap-1">
-                    {isAdmin ? (
-                      <span className="bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800">
-                        ⚡ Acceso administrativo completo (sin Importar Excel / Pegar ni borrado permanente)
-                      </span>
-                    ) : u.permisosModulos.length === 0 ? (
-                      <span className="text-[11px] text-rose-500 italic">
-                        Sin módulos asignados (Acceso restringido)
-                      </span>
-                    ) : (
-                      u.permisosModulos.map((modId) => {
-                        const modDef = MODULOS_SISTEMA.find((m) => m.id === modId);
-                        return (
-                          <span
-                            key={modId}
-                            className="bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 text-[10px] font-medium px-2 py-0.5 rounded-md"
-                          >
-                            {modDef?.label || modId}
+                      <div className="flex flex-wrap gap-1">
+                        {isAdmin ? (
+                          <span className="bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800">
+                            ⚡ Acceso administrativo completo (sin FUA, Importar Excel / Pegar ni borrado permanente)
                           </span>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
+                        ) : visibleModulos.length === 0 ? (
+                          <span className="text-[11px] text-rose-500 italic">
+                            Sin módulos asignados (Acceso restringido)
+                          </span>
+                        ) : (
+                          visibleModulos.map((modId) => {
+                            const modDef = MODULOS_SISTEMA.find((m) => m.id === modId);
+                            return (
+                              <span
+                                key={modId}
+                                className="bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 text-[10px] font-medium px-2 py-0.5 rounded-md"
+                              >
+                                {modDef?.label || modId}
+                              </span>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Card Actions */}
@@ -801,6 +809,7 @@ export const GestionUsuariosView: React.FC = () => {
                           ...prev,
                           rol: nuevoRol,
                           permisosModulos: prev.permisosModulos.filter((m) => {
+                            if (m === 'fua') return false;
                             if (m === 'gestion_usuarios' && nuevoRol !== 'administrador') return false;
                             return true;
                           }),
@@ -899,7 +908,8 @@ export const GestionUsuariosView: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1">
                     {MODULOS_SISTEMA.map((mod) => {
                       const isAdminOnlyMod = mod.id === 'gestion_usuarios';
-                      const isDisabled = !canEditModuleAccess || isAdminOnlyMod;
+                      const isDevOnlyMod = mod.id === 'fua';
+                      const isDisabled = !canEditModuleAccess || isAdminOnlyMod || isDevOnlyMod;
                       const isChecked = !isDisabled && formData.permisosModulos.includes(mod.id);
 
                       return (
@@ -923,11 +933,15 @@ export const GestionUsuariosView: React.FC = () => {
                           <div className="text-xs flex-1">
                             <div className="flex items-center justify-between gap-1">
                               <span className="font-semibold block">{mod.label}</span>
-                              {isAdminOnlyMod && (
+                              {isDevOnlyMod ? (
+                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">
+                                  Solo Desarrollador
+                                </span>
+                              ) : isAdminOnlyMod ? (
                                 <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                                   Solo Admin / Dev
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                             <span className="text-[10px] text-slate-400 block leading-tight">
                               {mod.description}

@@ -40,6 +40,7 @@ import {
 
 export const AtencionView: React.FC = () => {
   const {
+    currentUser,
     consultorios,
     citas,
     pacientes,
@@ -58,7 +59,9 @@ export const AtencionView: React.FC = () => {
     catalogoProcedimientos,
   } = useApp();
 
-  // Selector de Pestaña Activa dentro de Atenciones: 'consultorio' (Sala y Consulta) | 'atendidos' (Historial de Atendidos y FUA)
+  const canUseFua = currentUser?.rol === 'desarrollador';
+
+  // Selector de Pestaña Activa dentro de Atenciones: 'consultorio' (Sala y Consulta) | 'atendidos' (Historial de Atendidos)
   const [subTab, setSubTab] = useState<'consultorio' | 'atendidos'>('atendidos');
 
   // Estados del Consultorio
@@ -651,23 +654,27 @@ export const AtencionView: React.FC = () => {
               <span>Consultorios y Atenciones Clínicas</span>
             </h2>
             <p className="text-xs md:text-sm text-slate-500">
-              Gestión de consulta, registro de pacientes atendidos y emisión oficial del FUA (SIS)
+              {canUseFua
+                ? 'Gestión de consulta, registro de pacientes atendidos y emisión oficial del FUA (SIS)'
+                : 'Gestión de consulta y registro de pacientes atendidos'}
             </p>
           </div>
         </div>
 
-        {/* Acceso Rápido al Módulo Central FUA */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setCurrentTab('fua')}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
-            title="Ir a la Gestión General del FUA (SIS)"
-          >
-            <FileSpreadsheet size={15} />
-            <span>Gestión FUA Central</span>
-            <ExternalLink size={12} className="opacity-70" />
-          </button>
-        </div>
+        {/* Acceso Rápido al Módulo Central FUA (exclusivo Desarrollador) */}
+        {canUseFua && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentTab('fua')}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+              title="Ir a la Gestión General del FUA (SIS)"
+            >
+              <FileSpreadsheet size={15} />
+              <span>Gestión FUA Central</span>
+              <ExternalLink size={12} className="opacity-70" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ========================================================================= */}
@@ -684,7 +691,7 @@ export const AtencionView: React.FC = () => {
             }`}
           >
             <Users size={16} />
-            <span>📋 Pacientes Atendidos y Registro FUA</span>
+            <span>{canUseFua ? '📋 Pacientes Atendidos y Registro FUA' : '📋 Pacientes Atendidos'}</span>
             <span
               className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
                 subTab === 'atendidos'
@@ -813,7 +820,7 @@ export const AtencionView: React.FC = () => {
       {subTab === 'atendidos' && (
         <div className="space-y-6 animate-in fade-in duration-200">
           {/* TARJETAS RESUMEN KPI */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className={`grid gap-4 ${canUseFua ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 sm:grid-cols-2'}`}>
             <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -829,40 +836,44 @@ export const AtencionView: React.FC = () => {
               <div className="mt-1 text-[11px] text-slate-500">Consultas registradas</div>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Con FUA Generado
-                </span>
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center">
-                  <ShieldCheck size={17} />
+            {canUseFua && (
+              <>
+                <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Con FUA Generado
+                    </span>
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center">
+                      <ShieldCheck size={17} />
+                    </div>
+                  </div>
+                  <div className="mt-3 text-3xl font-black text-emerald-600 dark:text-emerald-400">
+                    {kpisAtendidos.conFua}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {kpisAtendidos.total > 0
+                      ? Math.round((kpisAtendidos.conFua / kpisAtendidos.total) * 100)
+                      : 0}
+                    % con formato oficial
+                  </div>
                 </div>
-              </div>
-              <div className="mt-3 text-3xl font-black text-emerald-600 dark:text-emerald-400">
-                {kpisAtendidos.conFua}
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                {kpisAtendidos.total > 0
-                  ? Math.round((kpisAtendidos.conFua / kpisAtendidos.total) * 100)
-                  : 0}
-                % con formato oficial
-              </div>
-            </div>
 
-            <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Pendientes de FUA
-                </span>
-                <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950 text-amber-600 flex items-center justify-center">
-                  <AlertCircle size={17} />
+                <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Pendientes de FUA
+                    </span>
+                    <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950 text-amber-600 flex items-center justify-center">
+                      <AlertCircle size={17} />
+                    </div>
+                  </div>
+                  <div className="mt-3 text-3xl font-black text-amber-600 dark:text-amber-400">
+                    {kpisAtendidos.sinFua}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500">Requieren emisión de FUA</div>
                 </div>
-              </div>
-              <div className="mt-3 text-3xl font-black text-amber-600 dark:text-amber-400">
-                {kpisAtendidos.sinFua}
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">Requieren emisión de FUA</div>
-            </div>
+              </>
+            )}
 
             <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
               <div className="flex items-center justify-between">
@@ -881,7 +892,7 @@ export const AtencionView: React.FC = () => {
           </div>
 
           {/* NOTIFICACIÓN ÉXITO FUA */}
-          {fuaSuccessToast && (
+          {canUseFua && fuaSuccessToast && (
             <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex items-center justify-between text-xs text-emerald-900 dark:text-emerald-200 animate-in fade-in">
               <div className="flex items-center gap-2.5">
                 <CheckCircle size={20} className="text-emerald-600 shrink-0" />
@@ -901,40 +912,42 @@ export const AtencionView: React.FC = () => {
             </div>
           )}
 
-          {/* BANNER ORIENTATIVO */}
-          <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-            <div className="flex items-start gap-2.5">
-              <div className="p-1.5 bg-blue-100 dark:bg-blue-900 text-blue-700 rounded-lg shrink-0 mt-0.5">
-                <FileText size={16} />
+          {/* BANNER ORIENTATIVO (solo Desarrollador) */}
+          {canUseFua && (
+            <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-start gap-2.5">
+                <div className="p-1.5 bg-blue-100 dark:bg-blue-900 text-blue-700 rounded-lg shrink-0 mt-0.5">
+                  <FileText size={16} />
+                </div>
+                <div>
+                  <strong className="text-blue-950 dark:text-blue-200 block">
+                    Panel de Atenciones y Visualización Directa del FUA
+                  </strong>
+                  <p className="text-blue-800/80 dark:text-blue-300">
+                    En esta tabla puede ver a todos los pacientes atendidos en el CSMC. Si el paciente ya tiene su FUA emitido, presione <strong>"👁️ Ver FUA"</strong> para visualizar e imprimir el anverso y reverso oficial. Si aún no lo tiene, presione <strong>"📄 Generar FUA"</strong> para crearlo en 1 clic.
+                  </p>
+                </div>
               </div>
-              <div>
-                <strong className="text-blue-950 dark:text-blue-200 block">
-                  Panel de Atenciones y Visualización Directa del FUA
-                </strong>
-                <p className="text-blue-800/80 dark:text-blue-300">
-                  En esta tabla puede ver a todos los pacientes atendidos en el CSMC. Si el paciente ya tiene su FUA emitido, presione <strong>"👁️ Ver FUA"</strong> para visualizar e imprimir el anverso y reverso oficial. Si aún no lo tiene, presione <strong>"📄 Generar FUA"</strong> para crearlo en 1 clic.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {kpisAtendidos.sinFua > 0 && (
+              <div className="flex items-center gap-2 shrink-0">
+                {kpisAtendidos.sinFua > 0 && (
+                  <button
+                    onClick={handleGenerarTodosFuasPendientes}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer shadow-xs transition-all flex items-center gap-1.5"
+                    title="Generar FUA para todas las atenciones que no tengan uno emitido"
+                  >
+                    <FileText size={14} />
+                    <span>⚡ Generar FUAs Pendientes ({kpisAtendidos.sinFua})</span>
+                  </button>
+                )}
                 <button
-                  onClick={handleGenerarTodosFuasPendientes}
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer shadow-xs transition-all flex items-center gap-1.5"
-                  title="Generar FUA para todas las atenciones que no tengan uno emitido"
+                  onClick={() => setCurrentTab('fua')}
+                  className="px-3.5 py-2 bg-[#1A2B4A] hover:bg-[#243b5e] text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer shadow-xs transition-all"
                 >
-                  <FileText size={14} />
-                  <span>⚡ Generar FUAs Pendientes ({kpisAtendidos.sinFua})</span>
+                  Configurar Lote / Rango FUA
                 </button>
-              )}
-              <button
-                onClick={() => setCurrentTab('fua')}
-                className="px-3.5 py-2 bg-[#1A2B4A] hover:bg-[#243b5e] text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer shadow-xs transition-all"
-              >
-                Configurar Lote / Rango FUA
-              </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* CONTROLES Y BUSCADOR */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 shadow-xs space-y-4">
@@ -953,41 +966,43 @@ export const AtencionView: React.FC = () => {
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-slate-500 font-bold">Estado FUA:</span>
-                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700/60 p-1 rounded-xl">
-                  <button
-                    onClick={() => setFiltroEstadoFua('TODOS')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      filtroEstadoFua === 'TODOS'
-                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
-                        : 'text-slate-500'
-                    }`}
-                  >
-                    Todos ({atenciones.length})
-                  </button>
-                  <button
-                    onClick={() => setFiltroEstadoFua('CON_FUA')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      filtroEstadoFua === 'CON_FUA'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-emerald-700 dark:text-emerald-400'
-                    }`}
-                  >
-                    Con FUA ({kpisAtendidos.conFua})
-                  </button>
-                  <button
-                    onClick={() => setFiltroEstadoFua('SIN_FUA')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      filtroEstadoFua === 'SIN_FUA'
-                        ? 'bg-amber-600 text-white shadow-2xs'
-                        : 'text-amber-700 dark:text-amber-400'
-                    }`}
-                  >
-                    Pendientes ({kpisAtendidos.sinFua})
-                  </button>
+              {canUseFua && (
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-slate-500 font-bold">Estado FUA:</span>
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700/60 p-1 rounded-xl">
+                    <button
+                      onClick={() => setFiltroEstadoFua('TODOS')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        filtroEstadoFua === 'TODOS'
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                          : 'text-slate-500'
+                      }`}
+                    >
+                      Todos ({atenciones.length})
+                    </button>
+                    <button
+                      onClick={() => setFiltroEstadoFua('CON_FUA')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        filtroEstadoFua === 'CON_FUA'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-emerald-700 dark:text-emerald-400'
+                      }`}
+                    >
+                      Con FUA ({kpisAtendidos.conFua})
+                    </button>
+                    <button
+                      onClick={() => setFiltroEstadoFua('SIN_FUA')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        filtroEstadoFua === 'SIN_FUA'
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'text-amber-700 dark:text-amber-400'
+                      }`}
+                    >
+                      Pendientes ({kpisAtendidos.sinFua})
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* TABLA DE ATENCIONES REALIZADAS */}
@@ -999,14 +1014,14 @@ export const AtencionView: React.FC = () => {
                     <th className="py-3 px-4">Paciente</th>
                     <th className="py-3 px-4">Consultorio / Profesional</th>
                     <th className="py-3 px-4">Diagnóstico Principal (CIE-10)</th>
-                    <th className="py-3 px-4">Estado FUA</th>
+                    {canUseFua && <th className="py-3 px-4">Estado FUA</th>}
                     <th className="py-3 px-4 text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
                   {atencionesFiltradas.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-10 text-center text-slate-400">
+                      <td colSpan={canUseFua ? 6 : 5} className="py-10 text-center text-slate-400">
                         No se encontraron atenciones registradas con los filtros seleccionados.
                       </td>
                     </tr>
@@ -1081,47 +1096,49 @@ export const AtencionView: React.FC = () => {
                           </td>
 
                           {/* ESTADO FUA */}
-                          <td className="py-3.5 px-4">
-                            {(() => {
-                              const segPac = (pac?.seguro || '').toUpperCase();
-                              const pacTieneSis = segPac.includes('SIS') || segPac === 'SUBSIDIADO' || segPac === 'SEMISUBSIDIADO';
+                          {canUseFua && (
+                            <td className="py-3.5 px-4">
+                              {(() => {
+                                const segPac = (pac?.seguro || '').toUpperCase();
+                                const pacTieneSis = segPac.includes('SIS') || segPac === 'SUBSIDIADO' || segPac === 'SEMISUBSIDIADO';
 
-                              if (fua) {
-                                return (
-                                  <div className="space-y-0.5">
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                      <ShieldCheck size={12} />
-                                      <span>FUA GENERADO</span>
-                                    </span>
-                                    <div className="text-[11px] font-mono font-bold text-rose-600 dark:text-rose-400 pl-1">
-                                      {fua.numero_fua}
+                                if (fua) {
+                                  return (
+                                    <div className="space-y-0.5">
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                        <ShieldCheck size={12} />
+                                        <span>FUA GENERADO</span>
+                                      </span>
+                                      <div className="text-[11px] font-mono font-bold text-rose-600 dark:text-rose-400 pl-1">
+                                        {fua.numero_fua}
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              }
+                                  );
+                                }
 
-                              if (!pacTieneSis) {
+                                if (!pacTieneSis) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-750 text-slate-500 border border-slate-200 dark:border-slate-700" title="Solo pacientes SIS generan FUA">
+                                      <span>NO APLICA FUA ({pac?.seguro || 'NO SIS'})</span>
+                                    </span>
+                                  );
+                                }
+
                                 return (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-750 text-slate-500 border border-slate-200 dark:border-slate-700" title="Solo pacientes SIS generan FUA">
-                                    <span>NO APLICA FUA ({pac?.seguro || 'NO SIS'})</span>
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                                    <AlertCircle size={12} />
+                                    <span>SIN FUA EMITIDO</span>
                                   </span>
                                 );
-                              }
-
-                              return (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                                  <AlertCircle size={12} />
-                                  <span>SIN FUA EMITIDO</span>
-                                </span>
-                              );
-                            })()}
-                          </td>
+                              })()}
+                            </td>
+                          )}
 
                           {/* ACCIONES */}
                           <td className="py-3.5 px-4 text-center">
                             <div className="flex items-center justify-center gap-2">
-                              {/* BOTÓN VER FUA O GENERAR FUA */}
-                              {(() => {
+                              {/* BOTÓN VER FUA O GENERAR FUA (solo Desarrollador) */}
+                              {canUseFua && (() => {
                                 const segPac = (pac?.seguro || '').toUpperCase();
                                 const pacTieneSis = segPac.includes('SIS') || segPac === 'SUBSIDIADO' || segPac === 'SEMISUBSIDIADO';
 
@@ -1812,7 +1829,19 @@ export const AtencionView: React.FC = () => {
                 </p>
               </div>
 
-              {pacienteTieneSis ? (
+              {!canUseFua ? (
+                <div className="flex flex-col gap-2 pt-2">
+                  <button
+                    onClick={() => {
+                      setAtencionRecienGuardada(null);
+                      setSubTab('atendidos');
+                    }}
+                    className="w-full py-2.5 px-4 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer transition-all"
+                  >
+                    Aceptar y ver Pacientes Atendidos
+                  </button>
+                </div>
+              ) : pacienteTieneSis ? (
                 <>
                   <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-xl border border-blue-200 dark:border-blue-900 text-xs text-blue-900 dark:text-blue-200 text-left">
                     <strong>¿Desea generar el Formato Único de Atención (FUA)?</strong>
@@ -2070,9 +2099,9 @@ export const AtencionView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL OFICIAL PREVIEW FUA (ANVERSO & REVERSO DUPLEX A4) */}
+      {/* MODAL OFICIAL PREVIEW FUA (ANVERSO & REVERSO DUPLEX A4 — solo Desarrollador) */}
       {/* ========================================================================= */}
-      {selectedFuaForPreview && (
+      {canUseFua && selectedFuaForPreview && (
         <FuaPreviewModal
           fua={selectedFuaForPreview}
           onClose={() => setSelectedFuaForPreview(null)}

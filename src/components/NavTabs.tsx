@@ -50,6 +50,10 @@ export const NavTabs: React.FC = () => {
         const Icon = tab.icon;
 
         if (!hasAccess) {
+          // El módulo FUA solo es visible para el perfil Desarrollador
+          if (tab.moduleId === 'fua') {
+            return null;
+          }
           // If not accessible, render disabled with lock
           return (
             <div
